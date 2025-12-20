@@ -1,4 +1,4 @@
-import { Bell, Search, User, HelpCircle } from "lucide-react";
+import { Bell, Search, User, HelpCircle, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,8 +10,19 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/hooks/useAuth";
 
 export function Header() {
+  const { user, roles, signOut } = useAuth();
+
+  const handleSignOut = async () => {
+    await signOut();
+  };
+
+  const displayName = user?.user_metadata?.full_name || user?.email || 'User';
+  const displayEmail = user?.email || '';
+  const primaryRole = roles[0] || 'customer';
+
   return (
     <header className="h-16 border-b border-border bg-card/50 backdrop-blur-xl sticky top-0 z-50">
       <div className="flex items-center justify-between h-full px-6">
@@ -53,10 +64,13 @@ export function Header() {
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>
                 <div className="flex flex-col">
-                  <span>Admin User</span>
+                  <span>{displayName}</span>
                   <span className="text-xs text-muted-foreground font-normal">
-                    admin@company.com
+                    {displayEmail}
                   </span>
+                  <Badge variant="outline" className="mt-1 w-fit text-xs capitalize">
+                    {primaryRole.replace('_', ' ')}
+                  </Badge>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
@@ -64,7 +78,11 @@ export function Header() {
               <DropdownMenuItem>Billing</DropdownMenuItem>
               <DropdownMenuItem>API Keys</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive">
+              <DropdownMenuItem 
+                className="text-destructive cursor-pointer"
+                onClick={handleSignOut}
+              >
+                <LogOut className="w-4 h-4 mr-2" />
                 Sign out
               </DropdownMenuItem>
             </DropdownMenuContent>
