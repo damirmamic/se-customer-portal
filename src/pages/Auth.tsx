@@ -87,8 +87,14 @@ export default function Auth() {
         throw new Error(error.message);
       }
 
-      // Redirect to Entra ID login
-      window.location.href = data.authUrl;
+      if (!data?.authUrl) {
+        throw new Error('No authentication URL received');
+      }
+
+      console.log('Redirecting to:', data.authUrl);
+      
+      // Use replace to prevent back button issues
+      window.location.replace(data.authUrl);
     } catch (error) {
       console.error('Login error:', error);
       toast({
