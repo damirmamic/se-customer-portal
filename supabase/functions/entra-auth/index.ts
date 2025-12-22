@@ -43,7 +43,7 @@ serve(async (req) => {
 
     const clientId = Deno.env.get('AZURE_CLIENT_ID');
     const clientSecret = Deno.env.get('AZURE_CLIENT_SECRET');
-    const tenantId = 'common'; // Multi-tenant: accepts any Azure AD tenant // 'common' for multi-tenant
+    const tenantId = 'organizations'; // Multi-tenant: accepts any Azure AD organizational account
 
     if (!clientId || !clientSecret) {
       console.error('Missing Azure credentials');
