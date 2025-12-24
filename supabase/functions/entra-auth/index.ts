@@ -45,12 +45,16 @@ serve(async (req) => {
     const clientSecret = Deno.env.get('AZURE_CLIENT_SECRET');
     const tenantId = 'common'; // Accepts both personal Microsoft accounts and work/school accounts
 
-    if (!clientId || !clientSecret) {
-      console.error('Missing Azure credentials');
+    if (!clientId) {
+      console.error('Missing AZURE_CLIENT_ID');
       return new Response(
-        JSON.stringify({ error: 'Azure credentials not configured' }),
+        JSON.stringify({ error: 'Azure client ID not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    if (!clientSecret) {
+      console.warn('AZURE_CLIENT_SECRET is not set; proceeding as a public client (PKCE)');
     }
 
     // Use group mapping from request if provided, otherwise use default
@@ -58,6 +62,13 @@ serve(async (req) => {
 
     if (action === 'get-auth-url') {
       // Generate authorization URL for Entra ID with PKCE
+      if (!redirectUri || !codeChallenge) {
+        return new Response(
+          JSON.stringify({ error: 'Missing redirectUri or codeChallenge' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       const scope = encodeURIComponent('openid profile email User.Read GroupMember.Read.All');
       const responseType = 'code';
       const authUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?` +
@@ -78,22 +89,33 @@ serve(async (req) => {
     }
 
     if (action === 'exchange-code') {
-      // Exchange authorization code for tokens with PKCE
+      // Exchange authorization code for tokens (PKCE)
+      if (!code || !redirectUri) {
+        return new Response(
+          JSON.stringify({ error: 'Missing authorization code or redirectUri' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (!codeVerifier) {
+        return new Response(
+          JSON.stringify({ error: 'PKCE code verifier is required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
-      
+
+      // IMPORTANT: when the Entra application is configured as a "public client" (SPA/native),
+      // sending client_secret will fail with AADSTS700025. With PKCE, client_secret is not needed.
       const tokenParams: Record<string, string> = {
         client_id: clientId,
-        client_secret: clientSecret,
-        code: code,
+        code,
         redirect_uri: redirectUri,
         grant_type: 'authorization_code',
         scope: 'openid profile email User.Read GroupMember.Read.All',
+        code_verifier: codeVerifier,
       };
-      
-      // Add PKCE code_verifier if provided
-      if (codeVerifier) {
-        tokenParams.code_verifier = codeVerifier;
-      }
       
       const tokenResponse = await fetch(tokenUrl, {
         method: 'POST',
