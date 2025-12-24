@@ -35,6 +35,7 @@ export interface AzureSubscription {
 
 export interface DashboardSummary {
   totalResources: number;
+  healthyResources: number;
   activeIncidents: number;
   criticalIncidents: number;
   resourcesByType: Record<string, number>;

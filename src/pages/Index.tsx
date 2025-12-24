@@ -24,65 +24,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-// Fallback mock data for when Azure is not connected
-const mockResources = [
-  {
-    name: "prod-api-cluster-01",
-    type: "container" as const,
-    status: "healthy" as const,
-    region: "US East",
-    uptime: 99.99,
-    cpu: 45,
-    memory: 62,
-    subscription: "Enterprise Production",
-  },
-  {
-    name: "prod-db-primary",
-    type: "database" as const,
-    status: "healthy" as const,
-    region: "US East",
-    uptime: 99.98,
-    cpu: 38,
-    memory: 71,
-    subscription: "Enterprise Production",
-  },
-  {
-    name: "staging-vm-02",
-    type: "vm" as const,
-    status: "warning" as const,
-    region: "EU West",
-    uptime: 99.85,
-    cpu: 89,
-    memory: 82,
-    subscription: "Development",
-  },
-  {
-    name: "cdn-global",
-    type: "cdn" as const,
-    status: "degraded" as const,
-    region: "Global",
-    uptime: 99.92,
-    subscription: "Enterprise Production",
-  },
-  {
-    name: "backup-storage-01",
-    type: "storage" as const,
-    status: "healthy" as const,
-    region: "US West",
-    uptime: 100,
-    subscription: "Enterprise Backup",
-  },
-  {
-    name: "analytics-db",
-    type: "database" as const,
-    status: "maintenance" as const,
-    region: "US Central",
-    uptime: 99.95,
-    cpu: 12,
-    memory: 45,
-    subscription: "Analytics",
-  },
-];
 
 const Index = () => {
   const {
@@ -97,14 +38,20 @@ const Index = () => {
     refresh,
   } = useAzureMonitor();
 
-  const displayResources = resources.length > 0 ? resources : mockResources;
   const hasAzureData = resources.length > 0 || summary !== null;
 
-  // Build metrics from Azure data or use defaults
+  const healthyCount = resources.filter(r => r.status === 'healthy').length;
+  const healthPercentage = resources.length > 0 
+    ? Math.round((healthyCount / resources.length) * 100) 
+    : 0;
+  const avgUptime = resources.length > 0
+    ? (resources.reduce((acc, r) => acc + (r.uptime || 99.9), 0) / resources.length).toFixed(2)
+    : "0";
+
   const metrics = [
     {
       title: "Total Resources",
-      value: summary?.totalResources?.toString() ?? displayResources.length.toString(),
+      value: summary?.totalResources?.toString() ?? resources.length.toString(),
       change: 12,
       changeLabel: "vs last month",
       icon: <Server className="w-5 h-5" />,
@@ -112,47 +59,43 @@ const Index = () => {
     },
     {
       title: "Overall Health",
-      value: hasAzureData 
-        ? `${Math.round((displayResources.filter(r => r.status === 'healthy').length / displayResources.length) * 100)}%`
-        : "98.7%",
+      value: `${healthPercentage}%`,
       change: 0.3,
       changeLabel: "vs yesterday",
       icon: <Activity className="w-5 h-5" />,
-      status: "healthy" as const,
+      status: healthPercentage >= 90 ? "healthy" as const : healthPercentage >= 70 ? "warning" as const : "critical" as const,
     },
     {
       title: "Active Incidents",
-      value: summary?.activeIncidents?.toString() ?? alerts.length.toString() ?? "3",
+      value: summary?.activeIncidents?.toString() ?? alerts.length.toString(),
       change: -2,
       changeLabel: "vs yesterday",
       icon: <AlertTriangle className="w-5 h-5" />,
-      status: (summary?.criticalIncidents ?? 0) > 0 ? "critical" as const : "warning" as const,
+      status: (summary?.criticalIncidents ?? 0) > 0 ? "critical" as const : alerts.length > 0 ? "warning" as const : "healthy" as const,
     },
     {
       title: "SLA Compliance",
-      value: hasAzureData 
-        ? `${(displayResources.reduce((acc, r) => acc + (r.uptime || 99.9), 0) / displayResources.length).toFixed(2)}%`
-        : "99.97%",
+      value: `${avgUptime}%`,
       change: 0.02,
       changeLabel: "30-day avg",
       icon: <CheckCircle2 className="w-5 h-5" />,
-      status: "healthy" as const,
+      status: parseFloat(avgUptime) >= 99.9 ? "healthy" as const : "warning" as const,
     },
     {
-      title: "Operations Today",
-      value: "47",
-      change: 23,
-      changeLabel: "vs last week",
+      title: "Healthy Resources",
+      value: summary?.healthyResources?.toString() ?? healthyCount.toString(),
+      change: 0,
+      changeLabel: "currently",
       icon: <TrendingUp className="w-5 h-5" />,
       status: "info" as const,
     },
     {
-      title: "Avg Response Time",
-      value: "142ms",
-      change: -8,
-      changeLabel: "vs last hour",
+      title: "Critical Incidents",
+      value: summary?.criticalIncidents?.toString() ?? "0",
+      change: 0,
+      changeLabel: "currently",
       icon: <Clock className="w-5 h-5" />,
-      status: "healthy" as const,
+      status: (summary?.criticalIncidents ?? 0) > 0 ? "critical" as const : "healthy" as const,
     },
   ];
 
@@ -189,17 +132,22 @@ const Index = () => {
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Syncing...</span>
+                  <span>Loading Azure data...</span>
                 </>
               ) : error ? (
                 <>
-                  <span className="w-2 h-2 bg-warning rounded-full" />
-                  <span>Using cached data</span>
+                  <span className="w-2 h-2 bg-destructive rounded-full" />
+                  <span className="text-destructive">{error}</span>
+                </>
+              ) : hasAzureData ? (
+                <>
+                  <span className="w-2 h-2 bg-success rounded-full animate-pulse" />
+                  <span>Connected to Azure ({resources.length} resources)</span>
                 </>
               ) : (
                 <>
-                  <span className="w-2 h-2 bg-success rounded-full animate-pulse" />
-                  <span>{hasAzureData ? 'Connected to Azure' : 'All systems operational'}</span>
+                  <span className="w-2 h-2 bg-warning rounded-full" />
+                  <span>No Azure data - select a subscription</span>
                 </>
               )}
             </div>
@@ -227,21 +175,30 @@ const Index = () => {
                   View all resources →
                 </a>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {displayResources.slice(0, 6).map((resource) => (
-                  <ResourceCard
-                    key={resource.name}
-                    name={resource.name}
-                    type={resource.type as any}
-                    status={resource.status as any}
-                    region={resource.region}
-                    uptime={typeof resource.uptime === 'number' ? resource.uptime : 99.9}
-                    cpu={resource.cpu}
-                    memory={resource.memory}
-                    subscription={resource.subscription}
-                  />
-                ))}
-              </div>
+              {resources.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {resources.slice(0, 6).map((resource) => (
+                    <ResourceCard
+                      key={resource.name}
+                      name={resource.name}
+                      type={resource.type as any}
+                      status={resource.status as any}
+                      region={resource.region}
+                      uptime={typeof resource.uptime === 'number' ? resource.uptime : 99.9}
+                      cpu={resource.cpu}
+                      memory={resource.memory}
+                      subscription={resource.subscription}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="glass-card p-8 text-center">
+                  <Server className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">
+                    {loading ? "Loading resources from Azure..." : "No resources found. Select a subscription above."}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
