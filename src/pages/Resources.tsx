@@ -10,29 +10,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Grid, List, Filter } from "lucide-react";
-
-const allResources = [
-  { name: "prod-api-cluster-01", type: "container" as const, status: "healthy" as const, region: "US East", uptime: 99.99, cpu: 45, memory: 62, subscription: "Enterprise Production" },
-  { name: "prod-db-primary", type: "database" as const, status: "healthy" as const, region: "US East", uptime: 99.98, cpu: 38, memory: 71, subscription: "Enterprise Production" },
-  { name: "prod-db-replica", type: "database" as const, status: "healthy" as const, region: "US West", uptime: 99.99, cpu: 22, memory: 55, subscription: "Enterprise Production" },
-  { name: "staging-vm-01", type: "vm" as const, status: "healthy" as const, region: "EU West", uptime: 99.92, cpu: 56, memory: 68, subscription: "Development" },
-  { name: "staging-vm-02", type: "vm" as const, status: "warning" as const, region: "EU West", uptime: 99.85, cpu: 89, memory: 82, subscription: "Development" },
-  { name: "cdn-global", type: "cdn" as const, status: "degraded" as const, region: "Global", uptime: 99.92, subscription: "Enterprise Production" },
-  { name: "backup-storage-01", type: "storage" as const, status: "healthy" as const, region: "US West", uptime: 100, subscription: "Enterprise Backup" },
-  { name: "backup-storage-02", type: "storage" as const, status: "healthy" as const, region: "EU Central", uptime: 100, subscription: "Enterprise Backup" },
-  { name: "analytics-db", type: "database" as const, status: "maintenance" as const, region: "US Central", uptime: 99.95, cpu: 12, memory: 45, subscription: "Analytics" },
-  { name: "ml-cluster-01", type: "container" as const, status: "healthy" as const, region: "US East", uptime: 99.97, cpu: 78, memory: 85, subscription: "Analytics" },
-  { name: "cache-redis-01", type: "database" as const, status: "healthy" as const, region: "US East", uptime: 99.99, cpu: 25, memory: 48, subscription: "Enterprise Production" },
-  { name: "queue-rabbitmq", type: "container" as const, status: "healthy" as const, region: "US East", uptime: 99.98, cpu: 32, memory: 41, subscription: "Enterprise Production" },
-];
+import { Search, Plus, Grid, List, Server, Loader2 } from "lucide-react";
+import { useAzureMonitor } from "@/hooks/useAzureMonitor";
 
 export default function Resources() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
 
-  const filteredResources = allResources.filter((resource) => {
+  const {
+    subscriptions,
+    selectedSubscription,
+    setSelectedSubscription,
+    resources,
+    loading,
+    error,
+  } = useAzureMonitor();
+
+  const filteredResources = resources.filter((resource) => {
     const matchesSearch = resource.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "all" || resource.status === statusFilter;
     const matchesType = typeFilter === "all" || resource.type === typeFilter;
@@ -42,17 +37,32 @@ export default function Resources() {
   return (
     <MainLayout>
       <div className="space-y-6 animate-fade-in">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Resources</h1>
             <p className="text-muted-foreground">
-              {allResources.length} resources across all subscriptions
+              {loading ? "Loading..." : `${resources.length} resources from Azure`}
             </p>
           </div>
-          <Button variant="glow">
-            <Plus className="w-4 h-4 mr-2" />
-            Create Resource
-          </Button>
+          <div className="flex items-center gap-4">
+            {subscriptions.length > 0 && (
+              <Select
+                value={selectedSubscription || undefined}
+                onValueChange={setSelectedSubscription}
+              >
+                <SelectTrigger className="w-[280px]">
+                  <SelectValue placeholder="Select subscription" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subscriptions.map((sub) => (
+                    <SelectItem key={sub.subscriptionId} value={sub.subscriptionId}>
+                      {sub.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         </div>
 
         {/* Filters */}
@@ -107,14 +117,58 @@ export default function Resources() {
           </div>
         </div>
 
-        {/* Resources Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredResources.map((resource) => (
-            <ResourceCard key={resource.name} {...resource} />
-          ))}
-        </div>
+        {/* Loading State */}
+        {loading && (
+          <div className="glass-card p-12 text-center">
+            <Loader2 className="w-12 h-12 mx-auto text-primary animate-spin mb-4" />
+            <p className="text-muted-foreground">Loading resources from Azure...</p>
+          </div>
+        )}
 
-        {filteredResources.length === 0 && (
+        {/* Error State */}
+        {error && !loading && (
+          <div className="glass-card p-12 text-center">
+            <Server className="w-12 h-12 mx-auto text-destructive mb-4" />
+            <p className="text-destructive font-medium">{error}</p>
+            <p className="text-muted-foreground text-sm mt-2">
+              Check your Azure connection settings
+            </p>
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!loading && !error && resources.length === 0 && (
+          <div className="glass-card p-12 text-center">
+            <Server className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+            <p className="text-foreground font-medium">No Azure resources found</p>
+            <p className="text-muted-foreground text-sm mt-2">
+              {subscriptions.length === 0 
+                ? "Connect your Azure account to view resources"
+                : "Select a subscription to view its resources"}
+            </p>
+          </div>
+        )}
+
+        {/* Resources Grid */}
+        {!loading && !error && resources.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filteredResources.map((resource) => (
+              <ResourceCard 
+                key={resource.id} 
+                name={resource.name}
+                type={resource.type}
+                status={resource.status}
+                region={resource.region}
+                uptime={resource.uptime}
+                cpu={resource.cpu}
+                memory={resource.memory}
+                subscription={resource.subscription}
+              />
+            ))}
+          </div>
+        )}
+
+        {!loading && !error && resources.length > 0 && filteredResources.length === 0 && (
           <div className="text-center py-12">
             <p className="text-muted-foreground">No resources found matching your criteria</p>
           </div>

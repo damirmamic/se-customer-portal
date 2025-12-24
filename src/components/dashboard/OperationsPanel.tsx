@@ -21,37 +21,10 @@ interface Operation {
   duration?: string;
 }
 
-const operations: Operation[] = [
-  {
-    id: "1",
-    name: "Database Backup - prod-db-01",
-    type: "backup",
-    status: "running",
-    startedAt: "10 min ago",
-    duration: "~5 min remaining",
-  },
-  {
-    id: "2",
-    name: "Failover Test - Region US-East",
-    type: "failover",
-    status: "completed",
-    startedAt: "2 hours ago",
-    duration: "12 min",
-  },
-  {
-    id: "3",
-    name: "Scale Out - API Cluster",
-    type: "scale",
-    status: "pending",
-  },
-  {
-    id: "4",
-    name: "Restore Point - staging-db",
-    type: "restore",
-    status: "failed",
-    startedAt: "1 hour ago",
-  },
-];
+interface OperationsPanelProps {
+  operations?: Operation[];
+  loading?: boolean;
+}
 
 const typeIcons = {
   backup: Database,
@@ -68,7 +41,7 @@ const statusConfig = {
   failed: { icon: AlertCircle, className: "text-destructive", label: "Failed" },
 };
 
-export function OperationsPanel() {
+export function OperationsPanel({ operations = [], loading }: OperationsPanelProps) {
   return (
     <div className="glass-card p-4">
       <div className="flex items-center justify-between mb-4">
@@ -80,52 +53,65 @@ export function OperationsPanel() {
       </div>
 
       <div className="space-y-3">
-        {operations.map((op) => {
-          const TypeIcon = typeIcons[op.type];
-          const StatusConfig = statusConfig[op.status];
-          const StatusIcon = StatusConfig.icon;
+        {loading ? (
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+            Loading operations...
+          </div>
+        ) : operations.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Database className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <p>No active operations</p>
+            <p className="text-xs mt-1">Operations will appear here when running</p>
+          </div>
+        ) : (
+          operations.map((op) => {
+            const TypeIcon = typeIcons[op.type];
+            const StatusConfig = statusConfig[op.status];
+            const StatusIcon = StatusConfig.icon;
 
-          return (
-            <div
-              key={op.id}
-              className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
-            >
-              <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center">
-                <TypeIcon className="w-4 h-4 text-primary" />
-              </div>
+            return (
+              <div
+                key={op.id}
+                className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
+              >
+                <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center">
+                  <TypeIcon className="w-4 h-4 text-primary" />
+                </div>
 
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">
-                  {op.name}
-                </p>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  {op.startedAt && <span>{op.startedAt}</span>}
-                  {op.duration && (
-                    <>
-                      <span>•</span>
-                      <span>{op.duration}</span>
-                    </>
-                  )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">
+                    {op.name}
+                  </p>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    {op.startedAt && <span>{op.startedAt}</span>}
+                    {op.duration && (
+                      <>
+                        <span>•</span>
+                        <span>{op.duration}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <StatusIcon className={cn("w-4 h-4", StatusConfig.className)} />
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "text-xs",
+                      op.status === "running" && "border-info/50 text-info",
+                      op.status === "completed" && "border-success/50 text-success",
+                      op.status === "failed" && "border-destructive/50 text-destructive"
+                    )}
+                  >
+                    {StatusConfig.label}
+                  </Badge>
                 </div>
               </div>
-
-              <div className="flex items-center gap-2">
-                <StatusIcon className={cn("w-4 h-4", StatusConfig.className)} />
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "text-xs",
-                    op.status === "running" && "border-info/50 text-info",
-                    op.status === "completed" && "border-success/50 text-success",
-                    op.status === "failed" && "border-destructive/50 text-destructive"
-                  )}
-                >
-                  {StatusConfig.label}
-                </Badge>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
 
       <Button variant="ghost" className="w-full mt-3 text-muted-foreground">
