@@ -7,6 +7,26 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Loader2, Shield } from 'lucide-react';
 
+// PKCE helper functions
+function generateCodeVerifier(): string {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  return btoa(String.fromCharCode(...array))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
+
+async function generateCodeChallenge(verifier: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(verifier);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
+
 export default function Auth() {
   const [loading, setLoading] = useState(false);
   const [processingCallback, setProcessingCallback] = useState(false);
@@ -34,14 +54,23 @@ export default function Auth() {
     setProcessingCallback(true);
     try {
       const redirectUri = `${window.location.origin}/auth`;
+      const codeVerifier = sessionStorage.getItem('pkce_code_verifier');
+      
+      if (!codeVerifier) {
+        throw new Error('Missing PKCE code verifier');
+      }
 
       const { data, error } = await supabase.functions.invoke('entra-auth', {
         body: {
           action: 'exchange-code',
           code,
           redirectUri,
+          codeVerifier,
         },
       });
+
+      // Clear the code verifier after use
+      sessionStorage.removeItem('pkce_code_verifier');
 
       if (error) {
         throw new Error(error.message);
@@ -75,11 +104,19 @@ export default function Auth() {
     setLoading(true);
     try {
       const redirectUri = `${window.location.origin}/auth`;
+      
+      // Generate PKCE code verifier and challenge
+      const codeVerifier = generateCodeVerifier();
+      const codeChallenge = await generateCodeChallenge(codeVerifier);
+      
+      // Store verifier for later use in callback
+      sessionStorage.setItem('pkce_code_verifier', codeVerifier);
 
       const { data, error } = await supabase.functions.invoke('entra-auth', {
         body: {
           action: 'get-auth-url',
           redirectUri,
+          codeChallenge,
         },
       });
 
