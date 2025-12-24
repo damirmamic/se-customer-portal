@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { ResourceCard } from "@/components/dashboard/ResourceCard";
@@ -5,6 +6,7 @@ import { OperationsPanel } from "@/components/dashboard/OperationsPanel";
 import { SLAChart } from "@/components/dashboard/SLAChart";
 import { IncidentsList } from "@/components/dashboard/IncidentsList";
 import { QuickActions } from "@/components/dashboard/QuickActions";
+import { useAzureMonitor } from "@/hooks/useAzureMonitor";
 import {
   Server,
   Activity,
@@ -12,60 +14,18 @@ import {
   CheckCircle2,
   TrendingUp,
   Clock,
+  Loader2,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-const metrics = [
-  {
-    title: "Total Resources",
-    value: "248",
-    change: 12,
-    changeLabel: "vs last month",
-    icon: <Server className="w-5 h-5" />,
-    status: "healthy" as const,
-  },
-  {
-    title: "Overall Health",
-    value: "98.7%",
-    change: 0.3,
-    changeLabel: "vs yesterday",
-    icon: <Activity className="w-5 h-5" />,
-    status: "healthy" as const,
-  },
-  {
-    title: "Active Incidents",
-    value: "3",
-    change: -2,
-    changeLabel: "vs yesterday",
-    icon: <AlertTriangle className="w-5 h-5" />,
-    status: "warning" as const,
-  },
-  {
-    title: "SLA Compliance",
-    value: "99.97%",
-    change: 0.02,
-    changeLabel: "30-day avg",
-    icon: <CheckCircle2 className="w-5 h-5" />,
-    status: "healthy" as const,
-  },
-  {
-    title: "Operations Today",
-    value: "47",
-    change: 23,
-    changeLabel: "vs last week",
-    icon: <TrendingUp className="w-5 h-5" />,
-    status: "info" as const,
-  },
-  {
-    title: "Avg Response Time",
-    value: "142ms",
-    change: -8,
-    changeLabel: "vs last hour",
-    icon: <Clock className="w-5 h-5" />,
-    status: "healthy" as const,
-  },
-];
-
-const resources = [
+// Fallback mock data for when Azure is not connected
+const mockResources = [
   {
     name: "prod-api-cluster-01",
     type: "container" as const,
@@ -125,20 +85,124 @@ const resources = [
 ];
 
 const Index = () => {
+  const {
+    subscriptions,
+    selectedSubscription,
+    setSelectedSubscription,
+    resources,
+    alerts,
+    summary,
+    loading,
+    error,
+    refresh,
+  } = useAzureMonitor();
+
+  const displayResources = resources.length > 0 ? resources : mockResources;
+  const hasAzureData = resources.length > 0 || summary !== null;
+
+  // Build metrics from Azure data or use defaults
+  const metrics = [
+    {
+      title: "Total Resources",
+      value: summary?.totalResources?.toString() ?? displayResources.length.toString(),
+      change: 12,
+      changeLabel: "vs last month",
+      icon: <Server className="w-5 h-5" />,
+      status: "healthy" as const,
+    },
+    {
+      title: "Overall Health",
+      value: hasAzureData 
+        ? `${Math.round((displayResources.filter(r => r.status === 'healthy').length / displayResources.length) * 100)}%`
+        : "98.7%",
+      change: 0.3,
+      changeLabel: "vs yesterday",
+      icon: <Activity className="w-5 h-5" />,
+      status: "healthy" as const,
+    },
+    {
+      title: "Active Incidents",
+      value: summary?.activeIncidents?.toString() ?? alerts.length.toString() ?? "3",
+      change: -2,
+      changeLabel: "vs yesterday",
+      icon: <AlertTriangle className="w-5 h-5" />,
+      status: (summary?.criticalIncidents ?? 0) > 0 ? "critical" as const : "warning" as const,
+    },
+    {
+      title: "SLA Compliance",
+      value: hasAzureData 
+        ? `${(displayResources.reduce((acc, r) => acc + (r.uptime || 99.9), 0) / displayResources.length).toFixed(2)}%`
+        : "99.97%",
+      change: 0.02,
+      changeLabel: "30-day avg",
+      icon: <CheckCircle2 className="w-5 h-5" />,
+      status: "healthy" as const,
+    },
+    {
+      title: "Operations Today",
+      value: "47",
+      change: 23,
+      changeLabel: "vs last week",
+      icon: <TrendingUp className="w-5 h-5" />,
+      status: "info" as const,
+    },
+    {
+      title: "Avg Response Time",
+      value: "142ms",
+      change: -8,
+      changeLabel: "vs last hour",
+      icon: <Clock className="w-5 h-5" />,
+      status: "healthy" as const,
+    },
+  ];
+
   return (
     <MainLayout>
       <div className="space-y-6 animate-fade-in">
         {/* Page Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
             <p className="text-muted-foreground">
               Monitor your infrastructure health and operations
             </p>
           </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="w-2 h-2 bg-success rounded-full animate-pulse" />
-            <span>All systems operational</span>
+          <div className="flex items-center gap-4">
+            {subscriptions.length > 0 && (
+              <Select
+                value={selectedSubscription || undefined}
+                onValueChange={setSelectedSubscription}
+              >
+                <SelectTrigger className="w-[280px]">
+                  <SelectValue placeholder="Select subscription" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subscriptions.map((sub) => (
+                    <SelectItem key={sub.subscriptionId} value={sub.subscriptionId}>
+                      {sub.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Syncing...</span>
+                </>
+              ) : error ? (
+                <>
+                  <span className="w-2 h-2 bg-warning rounded-full" />
+                  <span>Using cached data</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 bg-success rounded-full animate-pulse" />
+                  <span>{hasAzureData ? 'Connected to Azure' : 'All systems operational'}</span>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -164,8 +228,18 @@ const Index = () => {
                 </a>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {resources.map((resource) => (
-                  <ResourceCard key={resource.name} {...resource} />
+                {displayResources.slice(0, 6).map((resource) => (
+                  <ResourceCard
+                    key={resource.name}
+                    name={resource.name}
+                    type={resource.type as any}
+                    status={resource.status as any}
+                    region={resource.region}
+                    uptime={typeof resource.uptime === 'number' ? resource.uptime : 99.9}
+                    cpu={resource.cpu}
+                    memory={resource.memory}
+                    subscription={resource.subscription}
+                  />
                 ))}
               </div>
             </div>
@@ -173,9 +247,9 @@ const Index = () => {
 
           {/* Right Column - Operations & Incidents */}
           <div className="space-y-6">
-            <QuickActions />
+            <QuickActions onRefresh={refresh} loading={loading} />
             <OperationsPanel />
-            <IncidentsList />
+            <IncidentsList alerts={alerts} loading={loading} />
           </div>
         </div>
       </div>
