@@ -6,6 +6,7 @@ import { OperationsPanel } from "@/components/dashboard/OperationsPanel";
 import { SLAChart } from "@/components/dashboard/SLAChart";
 import { IncidentsList } from "@/components/dashboard/IncidentsList";
 import { QuickActions } from "@/components/dashboard/QuickActions";
+import { AzureConnectionError } from "@/components/dashboard/AzureConnectionError";
 import { useAzureMonitor } from "@/hooks/useAzureMonitor";
 import {
   Server,
@@ -153,6 +154,11 @@ const Index = () => {
             </div>
           </div>
         </div>
+
+        {/* Error Panel */}
+        {error && !loading && (
+          <AzureConnectionError error={error} onRetry={refresh} loading={loading} />
+        )}
 
         {/* Metrics Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
