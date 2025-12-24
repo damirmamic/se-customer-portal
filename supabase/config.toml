@@ -1,1 +1,7 @@
 project_id = "rdzwqkklwyuonjqwiczh"
+
+[functions.entra-auth]
+verify_jwt = false
+
+[functions.azure-monitor]
+verify_jwt = true
