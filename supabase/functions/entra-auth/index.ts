@@ -54,7 +54,11 @@ serve(async (req) => {
     }
 
     if (!clientSecret) {
-      console.warn('AZURE_CLIENT_SECRET is not set; proceeding as a public client (PKCE)');
+      console.error('Missing AZURE_CLIENT_SECRET');
+      return new Response(
+        JSON.stringify({ error: 'Azure client secret not configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // Use group mapping from request if provided, otherwise use default
@@ -106,10 +110,10 @@ serve(async (req) => {
 
       const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
 
-      // IMPORTANT: when the Entra application is configured as a "public client" (SPA/native),
-      // sending client_secret will fail with AADSTS700025. With PKCE, client_secret is not needed.
+      // Web platform requires client_secret for confidential client flow
       const tokenParams: Record<string, string> = {
         client_id: clientId,
+        client_secret: clientSecret,
         code,
         redirect_uri: redirectUri,
         grant_type: 'authorization_code',
