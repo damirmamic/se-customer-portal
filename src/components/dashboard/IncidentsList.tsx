@@ -24,36 +24,8 @@ const stateConfig: Record<string, { label: string; className: string }> = {
   Closed: { label: "Closed", className: "text-success" },
 };
 
-// Mock data for when no Azure data is available
-const mockIncidents = [
-  {
-    id: "INC-2024-001",
-    name: "Elevated error rates on API Gateway",
-    severity: "Sev2",
-    state: "Acknowledged",
-    resource: "API Gateway",
-    firedAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "INC-2024-002",
-    name: "Database connection timeouts",
-    severity: "Sev1",
-    state: "New",
-    resource: "PostgreSQL Cluster",
-    firedAt: new Date(Date.now() - 32 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "INC-2024-003",
-    name: "CDN cache invalidation delay",
-    severity: "Sev3",
-    state: "Acknowledged",
-    resource: "CDN",
-    firedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-  },
-];
-
 export function IncidentsList({ alerts, loading }: IncidentsListProps) {
-  const displayAlerts = alerts && alerts.length > 0 ? alerts : mockIncidents;
+  const displayAlerts = alerts || [];
   const activeCount = displayAlerts.filter(a => a.state !== 'Closed').length;
 
   const formatTime = (dateStr?: string) => {
@@ -87,7 +59,9 @@ export function IncidentsList({ alerts, loading }: IncidentsListProps) {
           </div>
         ) : displayAlerts.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            No active incidents
+            <AlertTriangle className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <p>No incidents from Azure</p>
+            <p className="text-xs mt-1">Connect to Azure to view alerts</p>
           </div>
         ) : (
           displayAlerts.slice(0, 5).map((alert) => {

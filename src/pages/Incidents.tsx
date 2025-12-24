@@ -17,120 +17,93 @@ import {
   Clock, 
   Search,
   Filter,
-  Plus,
+  Loader2,
   ArrowUpRight,
   Users,
   MessageSquare
 } from "lucide-react";
+import { useAzureMonitor, AzureAlert } from "@/hooks/useAzureMonitor";
+import { formatDistanceToNow } from "date-fns";
 
-interface Incident {
-  id: string;
-  title: string;
-  description: string;
-  severity: "critical" | "high" | "medium" | "low";
-  status: "open" | "investigating" | "identified" | "monitoring" | "resolved";
-  affectedServices: string[];
-  assignee: string;
-  createdAt: string;
-  updatedAt: string;
-  comments: number;
-}
-
-const incidents: Incident[] = [
-  {
-    id: "INC-2024-089",
-    title: "Database connection timeouts in US-East region",
-    description: "Multiple services experiencing intermittent database connection failures",
-    severity: "critical",
-    status: "investigating",
-    affectedServices: ["prod-api-cluster-01", "prod-db-primary"],
-    assignee: "John Smith",
-    createdAt: "2024-12-24T08:30:00Z",
-    updatedAt: "2024-12-24T10:15:00Z",
-    comments: 8,
-  },
-  {
-    id: "INC-2024-088",
-    title: "Elevated error rates on CDN edge nodes",
-    description: "503 errors being returned from EU edge locations",
-    severity: "high",
-    status: "identified",
-    affectedServices: ["cdn-global"],
-    assignee: "Sarah Johnson",
-    createdAt: "2024-12-24T07:45:00Z",
-    updatedAt: "2024-12-24T09:30:00Z",
-    comments: 5,
-  },
-  {
-    id: "INC-2024-087",
-    title: "Scheduled maintenance - Analytics cluster",
-    description: "Planned maintenance window for analytics database upgrade",
-    severity: "low",
-    status: "monitoring",
-    affectedServices: ["analytics-db"],
-    assignee: "Mike Chen",
-    createdAt: "2024-12-23T22:00:00Z",
-    updatedAt: "2024-12-24T02:00:00Z",
-    comments: 3,
-  },
-  {
-    id: "INC-2024-086",
-    title: "API rate limiting triggered for large customer",
-    description: "Customer exceeded rate limits causing temporary service degradation",
-    severity: "medium",
-    status: "resolved",
-    affectedServices: ["prod-api-cluster-01"],
-    assignee: "Emily Davis",
-    createdAt: "2024-12-23T14:20:00Z",
-    updatedAt: "2024-12-23T15:45:00Z",
-    comments: 12,
-  },
-];
-
-const getSeverityBadge = (severity: Incident["severity"]) => {
-  const styles = {
-    critical: "bg-destructive/20 text-destructive border-destructive/30",
-    high: "bg-warning/20 text-warning border-warning/30",
-    medium: "bg-info/20 text-info border-info/30",
-    low: "bg-muted text-muted-foreground",
+const getSeverityBadge = (severity: string) => {
+  const styles: Record<string, string> = {
+    Sev0: "bg-destructive/20 text-destructive border-destructive/30",
+    Sev1: "bg-destructive/20 text-destructive border-destructive/30",
+    Sev2: "bg-warning/20 text-warning border-warning/30",
+    Sev3: "bg-info/20 text-info border-info/30",
+    Sev4: "bg-muted text-muted-foreground",
   };
-  return <Badge className={styles[severity]}>{severity}</Badge>;
+  return <Badge className={styles[severity] || styles.Sev4}>{severity}</Badge>;
 };
 
-const getStatusBadge = (status: Incident["status"]) => {
-  const styles = {
-    open: { icon: AlertCircle, className: "text-destructive" },
-    investigating: { icon: AlertTriangle, className: "text-warning" },
-    identified: { icon: Clock, className: "text-info" },
-    monitoring: { icon: Clock, className: "text-primary" },
-    resolved: { icon: CheckCircle2, className: "text-success" },
+const getStatusBadge = (state: string) => {
+  const styles: Record<string, { icon: typeof AlertCircle; className: string }> = {
+    New: { icon: AlertCircle, className: "text-destructive" },
+    Acknowledged: { icon: AlertTriangle, className: "text-warning" },
+    Closed: { icon: CheckCircle2, className: "text-success" },
   };
-  const { icon: Icon, className } = styles[status];
+  const config = styles[state] || styles.New;
+  const Icon = config.icon;
   return (
-    <Badge variant="outline" className={className}>
+    <Badge variant="outline" className={config.className}>
       <Icon className="w-3 h-3 mr-1" />
-      {status}
+      {state}
     </Badge>
   );
 };
 
 const Incidents = () => {
-  const openIncidents = incidents.filter((i) => i.status !== "resolved").length;
-  const criticalIncidents = incidents.filter((i) => i.severity === "critical" && i.status !== "resolved").length;
+  const {
+    subscriptions,
+    selectedSubscription,
+    setSelectedSubscription,
+    alerts,
+    loading,
+    error,
+  } = useAzureMonitor();
+
+  const openAlerts = alerts.filter((a) => a.state !== "Closed").length;
+  const criticalAlerts = alerts.filter(
+    (a) => (a.severity === "Sev0" || a.severity === "Sev1") && a.state !== "Closed"
+  ).length;
+
+  const formatTime = (dateStr?: string) => {
+    if (!dateStr) return "Unknown";
+    try {
+      return formatDistanceToNow(new Date(dateStr), { addSuffix: true });
+    } catch {
+      return "Unknown";
+    }
+  };
 
   return (
     <MainLayout>
       <div className="space-y-6 animate-fade-in">
         {/* Page Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Incidents</h1>
-            <p className="text-muted-foreground">Monitor and manage active incidents</p>
+            <p className="text-muted-foreground">Azure Monitor alerts and incidents</p>
           </div>
-          <Button>
-            <Plus className="w-4 h-4 mr-2" />
-            Create Incident
-          </Button>
+          <div className="flex items-center gap-4">
+            {subscriptions.length > 0 && (
+              <Select
+                value={selectedSubscription || undefined}
+                onValueChange={setSelectedSubscription}
+              >
+                <SelectTrigger className="w-[280px]">
+                  <SelectValue placeholder="Select subscription" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subscriptions.map((sub) => (
+                    <SelectItem key={sub.subscriptionId} value={sub.subscriptionId}>
+                      {sub.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         </div>
 
         {/* Stats */}
@@ -139,8 +112,10 @@ const Incidents = () => {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Open Incidents</p>
-                  <p className="text-2xl font-bold text-foreground">{openIncidents}</p>
+                  <p className="text-sm text-muted-foreground">Open Alerts</p>
+                  <p className="text-2xl font-bold text-foreground">
+                    {loading ? "-" : openAlerts}
+                  </p>
                 </div>
                 <AlertCircle className="w-8 h-8 text-warning" />
               </div>
@@ -151,7 +126,9 @@ const Incidents = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Critical</p>
-                  <p className="text-2xl font-bold text-destructive">{criticalIncidents}</p>
+                  <p className="text-2xl font-bold text-destructive">
+                    {loading ? "-" : criticalAlerts}
+                  </p>
                 </div>
                 <AlertTriangle className="w-8 h-8 text-destructive" />
               </div>
@@ -161,8 +138,10 @@ const Incidents = () => {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Avg Resolution Time</p>
-                  <p className="text-2xl font-bold text-foreground">2.4h</p>
+                  <p className="text-sm text-muted-foreground">Total Alerts</p>
+                  <p className="text-2xl font-bold text-foreground">
+                    {loading ? "-" : alerts.length}
+                  </p>
                 </div>
                 <Clock className="w-8 h-8 text-info" />
               </div>
@@ -172,8 +151,10 @@ const Incidents = () => {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">This Month</p>
-                  <p className="text-2xl font-bold text-foreground">12</p>
+                  <p className="text-sm text-muted-foreground">Resolved</p>
+                  <p className="text-2xl font-bold text-foreground">
+                    {loading ? "-" : alerts.filter((a) => a.state === "Closed").length}
+                  </p>
                 </div>
                 <CheckCircle2 className="w-8 h-8 text-success" />
               </div>
@@ -187,19 +168,17 @@ const Incidents = () => {
             <div className="flex items-center gap-4">
               <div className="relative flex-1 max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input placeholder="Search incidents..." className="pl-10" />
+                <Input placeholder="Search alerts..." className="pl-10" />
               </div>
               <Select defaultValue="all">
                 <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Status" />
+                  <SelectValue placeholder="State" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="open">Open</SelectItem>
-                  <SelectItem value="investigating">Investigating</SelectItem>
-                  <SelectItem value="identified">Identified</SelectItem>
-                  <SelectItem value="monitoring">Monitoring</SelectItem>
-                  <SelectItem value="resolved">Resolved</SelectItem>
+                  <SelectItem value="all">All States</SelectItem>
+                  <SelectItem value="New">New</SelectItem>
+                  <SelectItem value="Acknowledged">Acknowledged</SelectItem>
+                  <SelectItem value="Closed">Closed</SelectItem>
                 </SelectContent>
               </Select>
               <Select defaultValue="all">
@@ -208,10 +187,11 @@ const Incidents = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Severity</SelectItem>
-                  <SelectItem value="critical">Critical</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="Sev0">Sev0</SelectItem>
+                  <SelectItem value="Sev1">Sev1</SelectItem>
+                  <SelectItem value="Sev2">Sev2</SelectItem>
+                  <SelectItem value="Sev3">Sev3</SelectItem>
+                  <SelectItem value="Sev4">Sev4</SelectItem>
                 </SelectContent>
               </Select>
               <Button variant="outline" size="icon">
@@ -221,51 +201,97 @@ const Incidents = () => {
           </CardContent>
         </Card>
 
-        {/* Incidents List */}
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle>All Incidents</CardTitle>
-            <CardDescription>Showing {incidents.length} incidents</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {incidents.map((incident) => (
-                <div
-                  key={incident.id}
-                  className="p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className="text-sm font-mono text-muted-foreground">{incident.id}</span>
-                        {getSeverityBadge(incident.severity)}
-                        {getStatusBadge(incident.status)}
+        {/* Loading State */}
+        {loading && (
+          <Card className="glass-card">
+            <CardContent className="py-12">
+              <div className="text-center">
+                <Loader2 className="w-12 h-12 mx-auto text-primary animate-spin mb-4" />
+                <p className="text-muted-foreground">Loading alerts from Azure...</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Error State */}
+        {error && !loading && (
+          <Card className="glass-card">
+            <CardContent className="py-12">
+              <div className="text-center">
+                <AlertTriangle className="w-12 h-12 mx-auto text-destructive mb-4" />
+                <p className="text-destructive font-medium">{error}</p>
+                <p className="text-muted-foreground text-sm mt-2">
+                  Check your Azure connection settings
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Empty State */}
+        {!loading && !error && alerts.length === 0 && (
+          <Card className="glass-card">
+            <CardContent className="py-12">
+              <div className="text-center">
+                <CheckCircle2 className="w-12 h-12 mx-auto text-success mb-4" />
+                <p className="text-foreground font-medium">No alerts from Azure</p>
+                <p className="text-muted-foreground text-sm mt-2">
+                  {subscriptions.length === 0
+                    ? "Connect your Azure account to view alerts"
+                    : "Your Azure environment has no active alerts"}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Alerts List */}
+        {!loading && !error && alerts.length > 0 && (
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle>Azure Alerts</CardTitle>
+              <CardDescription>Showing {alerts.length} alerts from Azure Monitor</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {alerts.map((alert) => (
+                  <div
+                    key={alert.id}
+                    className="p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className="text-sm font-mono text-muted-foreground">
+                            {alert.id.slice(0, 12)}...
+                          </span>
+                          {getSeverityBadge(alert.severity)}
+                          {getStatusBadge(alert.state)}
+                        </div>
+                        <h3 className="font-medium text-foreground mb-1">{alert.name}</h3>
+                        {alert.description && (
+                          <p className="text-sm text-muted-foreground mb-3">{alert.description}</p>
+                        )}
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <span>{alert.resource}</span>
+                          {alert.firedAt && (
+                            <>
+                              <span>•</span>
+                              <span>{formatTime(alert.firedAt)}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <h3 className="font-medium text-foreground mb-1">{incident.title}</h3>
-                      <p className="text-sm text-muted-foreground mb-3">{incident.description}</p>
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Users className="w-3 h-3" />
-                          {incident.assignee}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <MessageSquare className="w-3 h-3" />
-                          {incident.comments} comments
-                        </span>
-                        <span>
-                          Updated {new Date(incident.updatedAt).toLocaleString()}
-                        </span>
-                      </div>
+                      <Button variant="ghost" size="icon">
+                        <ArrowUpRight className="w-4 h-4" />
+                      </Button>
                     </div>
-                    <Button variant="ghost" size="icon">
-                      <ArrowUpRight className="w-4 h-4" />
-                    </Button>
                   </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </MainLayout>
   );
