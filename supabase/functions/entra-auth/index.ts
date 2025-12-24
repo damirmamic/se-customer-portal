@@ -39,7 +39,7 @@ serve(async (req) => {
   }
 
   try {
-    const { action, code, redirectUri, groupMapping } = await req.json();
+    const { action, code, redirectUri, groupMapping, codeChallenge, codeVerifier } = await req.json();
 
     const clientId = Deno.env.get('AZURE_CLIENT_ID');
     const clientSecret = Deno.env.get('AZURE_CLIENT_SECRET');
@@ -57,7 +57,7 @@ serve(async (req) => {
     const effectiveGroupMapping = groupMapping || GROUP_ROLE_MAPPING;
 
     if (action === 'get-auth-url') {
-      // Generate authorization URL for Entra ID
+      // Generate authorization URL for Entra ID with PKCE
       const scope = encodeURIComponent('openid profile email User.Read GroupMember.Read.All');
       const responseType = 'code';
       const authUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?` +
@@ -65,7 +65,9 @@ serve(async (req) => {
         `response_type=${responseType}&` +
         `redirect_uri=${encodeURIComponent(redirectUri)}&` +
         `scope=${scope}&` +
-        `response_mode=query`;
+        `response_mode=query&` +
+        `code_challenge=${encodeURIComponent(codeChallenge)}&` +
+        `code_challenge_method=S256`;
 
       console.log('Generated auth URL for redirect:', redirectUri);
 
@@ -76,20 +78,27 @@ serve(async (req) => {
     }
 
     if (action === 'exchange-code') {
-      // Exchange authorization code for tokens
+      // Exchange authorization code for tokens with PKCE
       const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+      
+      const tokenParams: Record<string, string> = {
+        client_id: clientId,
+        client_secret: clientSecret,
+        code: code,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+        scope: 'openid profile email User.Read GroupMember.Read.All',
+      };
+      
+      // Add PKCE code_verifier if provided
+      if (codeVerifier) {
+        tokenParams.code_verifier = codeVerifier;
+      }
       
       const tokenResponse = await fetch(tokenUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          client_id: clientId,
-          client_secret: clientSecret,
-          code: code,
-          redirect_uri: redirectUri,
-          grant_type: 'authorization_code',
-          scope: 'openid profile email User.Read GroupMember.Read.All',
-        }),
+        body: new URLSearchParams(tokenParams),
       });
 
       if (!tokenResponse.ok) {
