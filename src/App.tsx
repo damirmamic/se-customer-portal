@@ -8,7 +8,9 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Subscriptions from "./pages/Subscriptions";
+import SubscriptionDetail from "./pages/SubscriptionDetail";
 import Resources from "./pages/Resources";
+import ResourceDetail from "./pages/ResourceDetail";
 import Operations from "./pages/Operations";
 import Health from "./pages/Health";
 import Profile from "./pages/Profile";
@@ -35,7 +37,9 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
             <Route path="/subscriptions" element={<ProtectedRoute><Subscriptions /></ProtectedRoute>} />
+            <Route path="/subscriptions/:subscriptionId" element={<ProtectedRoute><SubscriptionDetail /></ProtectedRoute>} />
             <Route path="/resources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
+            <Route path="/resources/:resourceId" element={<ProtectedRoute><ResourceDetail /></ProtectedRoute>} />
             <Route path="/operations" element={<ProtectedRoute requiredRoles={['operations_engineer', 'admin']}><Operations /></ProtectedRoute>} />
             <Route path="/health" element={<ProtectedRoute><Health /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

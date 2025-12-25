@@ -1,8 +1,8 @@
+import { Link } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { CreditCard, Users, Server, Calendar, ExternalLink, Loader2 } from "lucide-react";
+import { CreditCard, Users, Server, ExternalLink, Loader2, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { useAzureMonitor } from "@/hooks/useAzureMonitor";
 
@@ -50,7 +50,11 @@ export default function Subscriptions() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {subscriptions.map((sub) => (
-              <div key={sub.subscriptionId} className="glass-card p-6 hover:border-primary/30 transition-all duration-300">
+              <Link 
+                key={sub.subscriptionId} 
+                to={`/subscriptions/${sub.subscriptionId}`}
+                className="glass-card p-6 hover:border-primary/30 transition-all duration-300 block group"
+              >
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
@@ -68,9 +72,7 @@ export default function Subscriptions() {
                     </div>
                     <p className="text-sm text-muted-foreground font-mono">{sub.subscriptionId}</p>
                   </div>
-                  <Button variant="ghost" size="icon">
-                    <ExternalLink className="w-4 h-4" />
-                  </Button>
+                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -85,7 +87,7 @@ export default function Subscriptions() {
                     <p className="text-xs text-muted-foreground">Users</p>
                   </div>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}
