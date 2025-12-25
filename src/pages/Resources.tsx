@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { ResourceCard } from "@/components/dashboard/ResourceCard";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Grid, List, Server, Loader2 } from "lucide-react";
+import { Search, Grid, List, Server, Loader2 } from "lucide-react";
 import { useAzureMonitor } from "@/hooks/useAzureMonitor";
 
 export default function Resources() {
@@ -153,17 +154,18 @@ export default function Resources() {
         {!loading && !error && resources.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {filteredResources.map((resource) => (
-              <ResourceCard 
-                key={resource.id} 
-                name={resource.name}
-                type={resource.type}
-                status={resource.status}
-                region={resource.region}
-                uptime={resource.uptime}
-                cpu={resource.cpu}
-                memory={resource.memory}
-                subscription={resource.subscription}
-              />
+              <Link key={resource.id} to={`/resources/${encodeURIComponent(resource.id)}`}>
+                <ResourceCard 
+                  name={resource.name}
+                  type={resource.type}
+                  status={resource.status}
+                  region={resource.region}
+                  uptime={resource.uptime}
+                  cpu={resource.cpu}
+                  memory={resource.memory}
+                  subscription={resource.subscription}
+                />
+              </Link>
             ))}
           </div>
         )}
