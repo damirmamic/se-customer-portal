@@ -45,17 +45,25 @@ export function Sidebar() {
       )}
     >
       {/* Schneider Electric Logo */}
-      <div className="flex items-center h-16 px-4 border-b border-sidebar-border">
+      <div className={cn(
+        "flex flex-col justify-center border-b border-sidebar-border transition-all duration-300",
+        collapsed ? "h-16 px-2" : "h-20 px-4"
+      )}>
         <div className="flex items-center gap-3">
           <img 
             src={schneiderLogo} 
             alt="Schneider Electric" 
             className={cn(
-              "h-8 object-contain transition-all duration-300",
-              collapsed ? "w-8" : "w-full max-w-[180px]"
+              "object-contain transition-all duration-300",
+              collapsed ? "h-8 w-8" : "h-8 w-full max-w-[180px]"
             )}
           />
         </div>
+        {!collapsed && (
+          <span className="text-xs text-muted-foreground mt-1 font-medium tracking-wide">
+            One Digital Grid Platform
+          </span>
+        )}
       </div>
 
       {/* Navigation */}
