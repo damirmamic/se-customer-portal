@@ -117,15 +117,16 @@ async function listResources(token: string, subscriptionId: string): Promise<Azu
   return data.value || [];
 }
 
-// Get metrics for a resource
+// Get metrics for a resource with time-series data
 async function getResourceMetrics(
   token: string,
   resourceId: string,
   metricNames: string[],
-  timespan: string = 'PT1H'
+  timespan: string = 'PT1H',
+  interval: string = 'PT5M'
 ): Promise<AzureMetric[]> {
   const metricsQuery = metricNames.join(',');
-  const url = `https://management.azure.com${resourceId}/providers/microsoft.insights/metrics?api-version=2021-05-01&metricnames=${metricsQuery}&timespan=${timespan}&interval=PT5M&aggregation=Average`;
+  const url = `https://management.azure.com${resourceId}/providers/microsoft.insights/metrics?api-version=2021-05-01&metricnames=${metricsQuery}&timespan=${timespan}&interval=${interval}&aggregation=Average`;
 
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
@@ -133,13 +134,48 @@ async function getResourceMetrics(
 
   if (!response.ok) {
     const details = await response.text();
-    throw new Error(
-      `Azure Management API get-metrics failed (${response.status}): ${details}`
-    );
+    console.log(`Metrics API error for ${resourceId}:`, details);
+    return [];
   }
 
   const data = await response.json();
   return data.value || [];
+}
+
+// Get resource availability/uptime from Azure Monitor
+async function getResourceAvailability(
+  token: string,
+  resourceId: string
+): Promise<number | null> {
+  try {
+    // Try to get availability metric (different names for different resource types)
+    const availabilityMetrics = ['Availability', 'availability', 'HealthProbeCount', 'Http2xx'];
+    const url = `https://management.azure.com${resourceId}/providers/microsoft.insights/metrics?api-version=2021-05-01&metricnames=${availabilityMetrics.join(',')}&timespan=P7D&interval=P1D&aggregation=Average`;
+
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    const metrics = data.value || [];
+    
+    for (const metric of metrics) {
+      const timeseries = metric.timeseries?.[0]?.data || [];
+      if (timeseries.length > 0) {
+        const values = timeseries.filter((d: MetricValue) => d.average !== undefined).map((d: MetricValue) => d.average!);
+        if (values.length > 0) {
+          return Math.round(values.reduce((a: number, b: number) => a + b, 0) / values.length * 100) / 100;
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 // Get alerts from Azure Monitor
@@ -215,6 +251,17 @@ function getMetricNamesForType(resourceType: string): string[] {
     'microsoft.storage/storageaccounts': ['UsedCapacity', 'Availability'],
   };
   return metricMap[resourceType.toLowerCase()] || [];
+}
+
+// Get unit for metric display
+function getMetricUnit(metricName: string): string {
+  const name = metricName.toLowerCase();
+  if (name.includes('percent') || name.includes('cpu')) return '%';
+  if (name.includes('bytes')) return 'bytes';
+  if (name.includes('count')) return 'count';
+  if (name.includes('seconds')) return 'sec';
+  if (name.includes('milliseconds')) return 'ms';
+  return '';
 }
 
 serve(async (req) => {
@@ -309,6 +356,14 @@ serve(async (req) => {
           }
 
           const statusRank = alertRankByResourceId.get(resource.id);
+          
+          // Try to get availability for this resource
+          let uptime: number | null = null;
+          try {
+            uptime = await getResourceAvailability(managementToken, resource.id);
+          } catch {
+            // Ignore availability fetch errors
+          }
 
           return {
             id: resource.id,
@@ -317,7 +372,7 @@ serve(async (req) => {
             azureType: resource.type,
             region: resource.location,
             status: statusForRank(statusRank ?? 0),
-            uptime: null,
+            uptime,
             cpu,
             memory,
             subscription: subscriptionId,
@@ -367,11 +422,43 @@ serve(async (req) => {
         );
       }
 
-      const metricNames = getMetricNamesForType(resourceId.split('/providers/')[1]?.split('/')[0] + '/' + resourceId.split('/providers/')[1]?.split('/')[1] || '');
-      const metrics = await getResourceMetrics(managementToken, resourceId, metricNames.length > 0 ? metricNames : ['Percentage CPU']);
+      // Extract resource type from resource ID
+      const resourceTypeParts = resourceId.split('/providers/');
+      let resourceType = '';
+      if (resourceTypeParts.length > 1) {
+        const typePart = resourceTypeParts[resourceTypeParts.length - 1];
+        const parts = typePart.split('/');
+        if (parts.length >= 2) {
+          resourceType = `${parts[0]}/${parts[1]}`;
+        }
+      }
+
+      const metricNames = getMetricNamesForType(resourceType);
+      const defaultMetrics = ['Percentage CPU', 'Available Memory Bytes', 'Network In Total', 'Network Out Total'];
+      const metricsToFetch = metricNames.length > 0 ? metricNames : defaultMetrics;
+      
+      console.log(`Fetching metrics for ${resourceType}:`, metricsToFetch);
+      
+      const rawMetrics = await getResourceMetrics(managementToken, resourceId, metricsToFetch, 'PT6H', 'PT5M');
+
+      // Transform to time-series format for charts
+      const formattedMetrics = rawMetrics.map(metric => {
+        const timeseries = metric.timeseries?.[0]?.data || [];
+        return {
+          name: metric.name.localizedValue || metric.name.value,
+          unit: getMetricUnit(metric.name.value),
+          data: timeseries.map((point: MetricValue) => ({
+            timestamp: point.timeStamp,
+            value: point.average ?? point.total ?? point.maximum ?? 0,
+          })),
+          currentValue: timeseries.length > 0 
+            ? (timeseries[timeseries.length - 1].average ?? timeseries[timeseries.length - 1].total ?? 0)
+            : null,
+        };
+      });
 
       return new Response(
-        JSON.stringify({ metrics }),
+        JSON.stringify({ metrics: formattedMetrics }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
