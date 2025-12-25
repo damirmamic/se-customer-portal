@@ -117,6 +117,50 @@ async function listResources(token: string, subscriptionId: string): Promise<Azu
   return data.value || [];
 }
 
+// Parse simple ISO8601 durations used in this project (e.g. PT6H, PT5M, P7D)
+function durationToMs(duration: string): number | null {
+  const d = duration.toUpperCase();
+
+  // PnD
+  const daysMatch = d.match(/^P(\d+)D$/);
+  if (daysMatch) return Number(daysMatch[1]) * 24 * 60 * 60 * 1000;
+
+  // PTnH
+  const hoursMatch = d.match(/^PT(\d+)H$/);
+  if (hoursMatch) return Number(hoursMatch[1]) * 60 * 60 * 1000;
+
+  // PTnM
+  const minutesMatch = d.match(/^PT(\d+)M$/);
+  if (minutesMatch) return Number(minutesMatch[1]) * 60 * 1000;
+
+  return null;
+}
+
+function toAzureTimespan(timespan: string): string {
+  if (timespan.includes('/')) return timespan;
+
+  const ms = durationToMs(timespan);
+  if (!ms) return timespan;
+
+  const end = new Date();
+  const start = new Date(end.getTime() - ms);
+  return `${start.toISOString()}/${end.toISOString()}`;
+}
+
+function extractCommonTimeGrain(details: string): string | null {
+  const match = details.match(/Commonly allowed time grains:\s*([0-9]{2}:[0-9]{2}:[0-9]{2})/i);
+  return match?.[1] ?? null;
+}
+
+function timeGrainToInterval(grain: string): string {
+  const [hh, mm, ss] = grain.split(':').map(Number);
+  const parts: string[] = [];
+  if (hh) parts.push(`${hh}H`);
+  if (mm) parts.push(`${mm}M`);
+  if (ss) parts.push(`${ss}S`);
+  return `PT${parts.join('') || '0M'}`;
+}
+
 // Get metrics for a resource with time-series data
 async function getResourceMetrics(
   token: string,
@@ -126,20 +170,50 @@ async function getResourceMetrics(
   interval: string = 'PT5M'
 ): Promise<AzureMetric[]> {
   const metricsQuery = metricNames.join(',');
-  const url = `https://management.azure.com${resourceId}/providers/microsoft.insights/metrics?api-version=2021-05-01&metricnames=${metricsQuery}&timespan=${timespan}&interval=${interval}&aggregation=Average`;
+  const timespanParam = encodeURIComponent(toAzureTimespan(timespan));
+  const metricNamesParam = encodeURIComponent(metricsQuery);
 
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const makeUrl = (intervalValue: string) =>
+    `https://management.azure.com${resourceId}/providers/microsoft.insights/metrics?api-version=2021-05-01&metricnames=${metricNamesParam}&timespan=${timespanParam}&interval=${intervalValue}&aggregation=Average`;
 
-  if (!response.ok) {
-    const details = await response.text();
-    console.log(`Metrics API error for ${resourceId}:`, details);
-    return [];
+  const fetchOnce = async (intervalValue: string) => {
+    const res = await fetch(makeUrl(intervalValue), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      return { ok: true as const, metrics: (json.value || []) as AzureMetric[] };
+    }
+
+    const details = await res.text();
+    return { ok: false as const, status: res.status, details };
+  };
+
+  const first = await fetchOnce(interval);
+  if (first.ok) return first.metrics;
+
+  // Helpful permission message (this is NOT the case in your logs, but good to surface)
+  if (first.status === 401 || first.status === 403) {
+    throw new Error(
+      `Azure metrics permission denied (${first.status}). Ensure the service principal has Monitoring Reader (or Reader) at least. Details: ${first.details}`
+    );
   }
 
-  const data = await response.json();
-  return data.value || [];
+  // Retry with Azure's suggested common time grain (storage metrics often require PT1H)
+  const common = extractCommonTimeGrain(first.details);
+  if (common) {
+    const retryInterval = timeGrainToInterval(common);
+    if (retryInterval !== interval) {
+      const second = await fetchOnce(retryInterval);
+      if (second.ok) return second.metrics;
+      console.log(`Metrics API error for ${resourceId}:`, second.details);
+      return [];
+    }
+  }
+
+  console.log(`Metrics API error for ${resourceId}:`, first.details);
+  return [];
 }
 
 // Get resource availability/uptime from Azure Monitor
@@ -148,31 +222,32 @@ async function getResourceAvailability(
   resourceId: string
 ): Promise<number | null> {
   try {
-    // Try to get availability metric (different names for different resource types)
-    const availabilityMetrics = ['Availability', 'availability', 'HealthProbeCount', 'Http2xx'];
-    const url = `https://management.azure.com${resourceId}/providers/microsoft.insights/metrics?api-version=2021-05-01&metricnames=${availabilityMetrics.join(',')}&timespan=P7D&interval=P1D&aggregation=Average`;
+    // Availability works for some services (e.g. Storage Accounts). If not supported, we'll return null.
+    const metrics = await getResourceMetrics(
+      token,
+      resourceId,
+      ['Availability'],
+      'P7D',
+      'PT1H'
+    );
 
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const availabilityMetric = metrics.find((m) =>
+      (m.name.value || '').toLowerCase().includes('availability')
+    );
 
-    if (!response.ok) {
-      return null;
-    }
+    const points = availabilityMetric?.timeseries?.[0]?.data ?? [];
+    const values = points
+      .map((p) => p.average)
+      .filter((v): v is number => typeof v === 'number');
 
-    const data = await response.json();
-    const metrics = data.value || [];
-    
-    for (const metric of metrics) {
-      const timeseries = metric.timeseries?.[0]?.data || [];
-      if (timeseries.length > 0) {
-        const values = timeseries.filter((d: MetricValue) => d.average !== undefined).map((d: MetricValue) => d.average!);
-        if (values.length > 0) {
-          return Math.round(values.reduce((a: number, b: number) => a + b, 0) / values.length * 100) / 100;
-        }
-      }
-    }
-    return null;
+    if (values.length === 0) return null;
+
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+
+    // Some availability metrics come as 0..1, others as 0..100
+    const normalized = avg <= 1 ? avg * 100 : avg;
+
+    return Math.round(normalized * 100) / 100;
   } catch {
     return null;
   }
