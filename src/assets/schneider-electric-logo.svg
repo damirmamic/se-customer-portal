@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 40" fill="none">
+  <g fill="#3DCD58">
+    <!-- SE Circle Logo Mark -->
+    <circle cx="20" cy="20" r="18" stroke="#3DCD58" stroke-width="2" fill="none"/>
+    <text x="12" y="26" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#3DCD58">SE</text>
+  </g>
+  <!-- Schneider Electric Text -->
+  <text x="46" y="18" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#FFFFFF">Schneider</text>
+  <text x="46" y="32" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#FFFFFF">Electric</text>
+</svg>
