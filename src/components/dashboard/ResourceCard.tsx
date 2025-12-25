@@ -67,11 +67,15 @@ export function ResourceCard({
         </div>
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">Uptime</span>
-          <span className={cn(
-            uptime >= 99.9 ? "text-success" : uptime >= 99 ? "text-warning" : "text-destructive"
-          )}>
-            {uptime}%
-          </span>
+          {uptime !== null && uptime !== undefined ? (
+            <span className={cn(
+              uptime >= 99.9 ? "text-success" : uptime >= 99 ? "text-warning" : "text-destructive"
+            )}>
+              {uptime}%
+            </span>
+          ) : (
+            <span className="text-muted-foreground">N/A</span>
+          )}
         </div>
 
         {cpu !== undefined && (

@@ -9,7 +9,7 @@ export interface AzureResource {
   azureType: string;
   region: string;
   status: 'healthy' | 'warning' | 'critical' | 'degraded' | 'maintenance';
-  uptime: number;
+  uptime: number | null;
   cpu?: number;
   memory?: number;
   subscription: string;
@@ -161,7 +161,7 @@ export function useAzureMonitor() {
   const getResourceMetrics = useCallback(async (resourceId: string) => {
     try {
       const data = await callAzureMonitor('get-metrics', { resourceId });
-      return data.metrics;
+      return data;
     } catch (err) {
       console.error('Failed to fetch metrics:', err);
       return null;

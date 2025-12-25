@@ -23,6 +23,7 @@ import {
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/dashboard/StatusBadge";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
 
 const resourceIcons = {
   vm: Server,
@@ -40,12 +41,24 @@ const resourceLabels = {
   container: "Container Instance",
 };
 
-interface MetricData {
-  name: string;
+interface MetricDataPoint {
+  timestamp: string;
   value: number;
-  unit: string;
-  timestamp?: string;
 }
+
+interface MetricSeries {
+  name: string;
+  unit: string;
+  data: MetricDataPoint[];
+  currentValue: number | null;
+}
+
+const chartColors = [
+  "hsl(var(--primary))",
+  "hsl(var(--success))",
+  "hsl(var(--warning))",
+  "hsl(var(--info))",
+];
 
 export default function ResourceDetail() {
   const { resourceId } = useParams<{ resourceId: string }>();
@@ -58,7 +71,7 @@ export default function ResourceDetail() {
     refresh
   } = useAzureMonitor();
 
-  const [metrics, setMetrics] = useState<MetricData[] | null>(null);
+  const [metrics, setMetrics] = useState<MetricSeries[]>([]);
   const [metricsLoading, setMetricsLoading] = useState(false);
 
   const resource = resources.find(r => r.id === decodedResourceId);
@@ -68,13 +81,40 @@ export default function ResourceDetail() {
     async function fetchMetrics() {
       if (decodedResourceId) {
         setMetricsLoading(true);
-        const data = await getResourceMetrics(decodedResourceId);
-        setMetrics(data);
+        try {
+          const data = await getResourceMetrics(decodedResourceId);
+          if (data?.metrics) {
+            setMetrics(data.metrics);
+          } else if (Array.isArray(data)) {
+            setMetrics(data);
+          } else {
+            setMetrics([]);
+          }
+        } catch (err) {
+          console.error("Failed to fetch metrics:", err);
+          setMetrics([]);
+        }
         setMetricsLoading(false);
       }
     }
     fetchMetrics();
   }, [decodedResourceId, getResourceMetrics]);
+
+  const formatTimestamp = (timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const formatValue = (value: number, unit: string) => {
+    if (unit === 'bytes') {
+      if (value >= 1e9) return `${(value / 1e9).toFixed(2)} GB`;
+      if (value >= 1e6) return `${(value / 1e6).toFixed(2)} MB`;
+      if (value >= 1e3) return `${(value / 1e3).toFixed(2)} KB`;
+      return `${value} B`;
+    }
+    if (unit === '%') return `${value.toFixed(1)}%`;
+    return value.toFixed(2);
+  };
 
   return (
     <MainLayout>
@@ -146,17 +186,21 @@ export default function ResourceDetail() {
                   <Clock className="w-5 h-5 text-muted-foreground" />
                   <div>
                     <p className="text-sm text-muted-foreground">Uptime</p>
-                    <p className={cn(
-                      "font-medium",
-                      resource.uptime >= 99.9 ? "text-success" : resource.uptime >= 99 ? "text-warning" : "text-destructive"
-                    )}>
-                      {resource.uptime}%
-                    </p>
+                    {resource.uptime !== null && resource.uptime !== undefined ? (
+                      <p className={cn(
+                        "font-medium",
+                        resource.uptime >= 99.9 ? "text-success" : resource.uptime >= 99 ? "text-warning" : "text-destructive"
+                      )}>
+                        {resource.uptime}%
+                      </p>
+                    ) : (
+                      <p className="font-medium text-muted-foreground">N/A</p>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {resource.cpu !== undefined && (
+              {resource.cpu !== undefined && resource.cpu !== null && (
                 <div className="glass-card p-4">
                   <div className="flex items-center gap-3">
                     <Cpu className="w-5 h-5 text-muted-foreground" />
@@ -175,7 +219,7 @@ export default function ResourceDetail() {
                 </div>
               )}
 
-              {resource.memory !== undefined && (
+              {resource.memory !== undefined && resource.memory !== null && (
                 <div className="glass-card p-4">
                   <div className="flex items-center gap-3">
                     <MemoryStick className="w-5 h-5 text-muted-foreground" />
@@ -192,6 +236,87 @@ export default function ResourceDetail() {
                     </div>
                   </div>
                 </div>
+              )}
+            </div>
+
+            {/* Metrics Charts */}
+            <div className="glass-card p-6">
+              <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                <Activity className="w-5 h-5" />
+                Performance Metrics (Last 6 Hours)
+              </h2>
+              {metricsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              ) : metrics.length > 0 ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {metrics.map((metric, index) => (
+                    <div key={metric.name} className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-medium text-foreground">{metric.name}</h3>
+                        {metric.currentValue !== null && (
+                          <Badge variant="outline">
+                            Current: {formatValue(metric.currentValue, metric.unit)}
+                          </Badge>
+                        )}
+                      </div>
+                      {metric.data && metric.data.length > 0 ? (
+                        <div className="h-48 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={metric.data}>
+                              <defs>
+                                <linearGradient id={`gradient-${index}`} x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor={chartColors[index % chartColors.length]} stopOpacity={0.3}/>
+                                  <stop offset="95%" stopColor={chartColors[index % chartColors.length]} stopOpacity={0}/>
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                              <XAxis 
+                                dataKey="timestamp" 
+                                tickFormatter={formatTimestamp}
+                                className="text-xs fill-muted-foreground"
+                                tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                                axisLine={{ stroke: 'hsl(var(--border))' }}
+                              />
+                              <YAxis 
+                                tickFormatter={(v) => formatValue(v, metric.unit)}
+                                className="text-xs fill-muted-foreground"
+                                tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                                axisLine={{ stroke: 'hsl(var(--border))' }}
+                                width={60}
+                              />
+                              <Tooltip 
+                                contentStyle={{ 
+                                  backgroundColor: 'hsl(var(--card))', 
+                                  borderColor: 'hsl(var(--border))',
+                                  borderRadius: '8px',
+                                }}
+                                labelFormatter={formatTimestamp}
+                                formatter={(value: number) => [formatValue(value, metric.unit), metric.name]}
+                              />
+                              <Area
+                                type="monotone"
+                                dataKey="value"
+                                stroke={chartColors[index % chartColors.length]}
+                                fill={`url(#gradient-${index})`}
+                                strokeWidth={2}
+                              />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </div>
+                      ) : (
+                        <div className="h-48 flex items-center justify-center bg-muted/20 rounded-lg">
+                          <p className="text-muted-foreground text-sm">No data points available</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm text-center py-8">
+                  No metrics available for this resource type
+                </p>
               )}
             </div>
 
@@ -240,35 +365,6 @@ export default function ResourceDetail() {
                   <p className="text-muted-foreground text-sm">No tags configured</p>
                 )}
               </div>
-            </div>
-
-            {/* Metrics */}
-            <div className="glass-card p-6">
-              <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                <Activity className="w-5 h-5" />
-                Metrics
-              </h2>
-              {metricsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                </div>
-              ) : metrics && metrics.length > 0 ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {metrics.map((metric, index) => (
-                    <div key={index} className="text-center p-4 rounded-lg bg-muted/30">
-                      <p className="text-2xl font-bold text-foreground">
-                        {typeof metric.value === 'number' ? metric.value.toFixed(2) : metric.value}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{metric.unit}</p>
-                      <p className="text-sm text-foreground mt-1">{metric.name}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground text-sm text-center py-4">
-                  No metrics available for this resource type
-                </p>
-              )}
             </div>
           </>
         )}
