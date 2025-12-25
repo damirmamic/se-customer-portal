@@ -11,7 +11,7 @@ interface ResourceCardProps {
   type: ResourceType;
   status: Status;
   region: string;
-  uptime: number;
+  uptime: number | null;
   cpu?: number;
   memory?: number;
   subscription: string;
