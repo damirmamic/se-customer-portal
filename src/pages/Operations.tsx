@@ -2,20 +2,14 @@ import { useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import {
   Database,
   RefreshCw,
   Shield,
   Zap,
-  Play,
-  Pause,
   Clock,
-  CheckCircle2,
-  AlertCircle,
-  XCircle,
   Plus,
-  Filter,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -33,82 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-interface Operation {
-  id: string;
-  name: string;
-  type: "backup" | "restore" | "failover" | "scale" | "maintenance";
-  status: "pending" | "running" | "completed" | "failed" | "cancelled";
-  progress?: number;
-  startedAt: string;
-  duration?: string;
-  resource: string;
-  initiatedBy: string;
-}
-
-const operations: Operation[] = [
-  {
-    id: "OP-2024-001",
-    name: "Full Database Backup",
-    type: "backup",
-    status: "running",
-    progress: 67,
-    startedAt: "10 min ago",
-    duration: "~5 min remaining",
-    resource: "prod-db-primary",
-    initiatedBy: "Scheduled",
-  },
-  {
-    id: "OP-2024-002",
-    name: "Disaster Recovery Failover Test",
-    type: "failover",
-    status: "completed",
-    startedAt: "2 hours ago",
-    duration: "12 min",
-    resource: "Region US-East → US-West",
-    initiatedBy: "admin@company.com",
-  },
-  {
-    id: "OP-2024-003",
-    name: "Horizontal Scale Out",
-    type: "scale",
-    status: "pending",
-    startedAt: "Scheduled: 15:00 UTC",
-    resource: "prod-api-cluster-01",
-    initiatedBy: "Auto-scaling Policy",
-  },
-  {
-    id: "OP-2024-004",
-    name: "Point-in-Time Restore",
-    type: "restore",
-    status: "failed",
-    startedAt: "1 hour ago",
-    duration: "8 min",
-    resource: "staging-db",
-    initiatedBy: "john@company.com",
-  },
-  {
-    id: "OP-2024-005",
-    name: "Maintenance Window - Patching",
-    type: "maintenance",
-    status: "running",
-    progress: 34,
-    startedAt: "25 min ago",
-    duration: "~45 min remaining",
-    resource: "analytics-db",
-    initiatedBy: "Scheduled",
-  },
-  {
-    id: "OP-2024-006",
-    name: "Incremental Backup",
-    type: "backup",
-    status: "completed",
-    startedAt: "3 hours ago",
-    duration: "4 min",
-    resource: "prod-db-replica",
-    initiatedBy: "Scheduled",
-  },
-];
+import { useAzureMonitor } from "@/hooks/useAzureMonitor";
 
 const typeIcons = {
   backup: Database,
@@ -126,23 +45,10 @@ const typeLabels = {
   maintenance: "Maintenance",
 };
 
-const statusConfig = {
-  pending: { icon: Clock, className: "text-muted-foreground bg-muted", label: "Pending" },
-  running: { icon: RefreshCw, className: "text-info bg-info/20", label: "Running" },
-  completed: { icon: CheckCircle2, className: "text-success bg-success/20", label: "Completed" },
-  failed: { icon: XCircle, className: "text-destructive bg-destructive/20", label: "Failed" },
-  cancelled: { icon: AlertCircle, className: "text-muted-foreground bg-muted", label: "Cancelled" },
-};
-
 export default function Operations() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-
-  const filteredOps = operations.filter((op) => {
-    const matchesType = typeFilter === "all" || op.type === typeFilter;
-    const matchesStatus = statusFilter === "all" || op.status === statusFilter;
-    return matchesType && matchesStatus;
-  });
+  const { resources, loading, error } = useAzureMonitor();
 
   return (
     <MainLayout>
@@ -221,96 +127,23 @@ export default function Operations() {
 
         {/* Operations List */}
         <div className="space-y-4">
-          {filteredOps.map((op) => {
-            const TypeIcon = typeIcons[op.type];
-            const StatusConfig = statusConfig[op.status];
-            const StatusIcon = StatusConfig.icon;
-
-            return (
-              <div
-                key={op.id}
-                className="glass-card p-4 hover:border-primary/30 transition-all duration-300"
-              >
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <TypeIcon className="w-6 h-6 text-primary" />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 flex-wrap mb-2">
-                      <span className="text-sm font-mono text-muted-foreground">
-                        {op.id}
-                      </span>
-                      <Badge variant="outline" className="text-xs">
-                        {typeLabels[op.type]}
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        className={cn("text-xs", StatusConfig.className)}
-                      >
-                        <StatusIcon
-                          className={cn(
-                            "w-3 h-3 mr-1",
-                            op.status === "running" && "animate-spin"
-                          )}
-                        />
-                        {StatusConfig.label}
-                      </Badge>
-                    </div>
-
-                    <h3 className="font-semibold text-foreground mb-1">
-                      {op.name}
-                    </h3>
-
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
-                      <span>Resource: {op.resource}</span>
-                      <span>•</span>
-                      <span>{op.startedAt}</span>
-                      {op.duration && (
-                        <>
-                          <span>•</span>
-                          <span>{op.duration}</span>
-                        </>
-                      )}
-                    </div>
-
-                    {op.progress !== undefined && (
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Progress</span>
-                          <span className="text-foreground">{op.progress}%</span>
-                        </div>
-                        <Progress value={op.progress} className="h-2" />
-                      </div>
-                    )}
-
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Initiated by: {op.initiatedBy}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {op.status === "running" && (
-                      <Button variant="ghost" size="icon">
-                        <Pause className="w-4 h-4" />
-                      </Button>
-                    )}
-                    {op.status === "pending" && (
-                      <Button variant="ghost" size="icon">
-                        <Play className="w-4 h-4" />
-                      </Button>
-                    )}
-                    {op.status === "failed" && (
-                      <Button variant="outline" size="sm">
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                        Retry
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {loading ? (
+            <div className="glass-card p-8 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : error ? (
+            <div className="glass-card p-8 text-center">
+              <p className="text-destructive">{error}</p>
+            </div>
+          ) : (
+            <div className="glass-card p-8 text-center">
+              <Database className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold text-foreground mb-2">No Operations</h3>
+              <p className="text-muted-foreground">
+                No operations have been created yet. Click "New Operation" to get started.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </MainLayout>

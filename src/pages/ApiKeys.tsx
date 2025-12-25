@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Key, Plus, Copy, Trash2, Eye, EyeOff, AlertTriangle, Clock, Shield } from "lucide-react";
+import { Key, Plus, Copy, Trash2, Eye, EyeOff, AlertTriangle, Shield } from "lucide-react";
 import { toast } from "sonner";
 
 interface ApiKey {
@@ -34,38 +34,8 @@ interface ApiKey {
   expiresAt: string | null;
 }
 
-const initialKeys: ApiKey[] = [
-  {
-    id: "1",
-    name: "Production API Key",
-    prefix: "sk_prod_****abc123",
-    permissions: "full",
-    createdAt: "2024-01-15",
-    lastUsed: "2024-12-24T10:30:00",
-    expiresAt: null,
-  },
-  {
-    id: "2",
-    name: "Development Key",
-    prefix: "sk_dev_****xyz789",
-    permissions: "read",
-    createdAt: "2024-03-20",
-    lastUsed: "2024-12-23T14:15:00",
-    expiresAt: "2025-03-20",
-  },
-  {
-    id: "3",
-    name: "CI/CD Pipeline",
-    prefix: "sk_ci_****def456",
-    permissions: "write",
-    createdAt: "2024-06-10",
-    lastUsed: "2024-12-24T08:00:00",
-    expiresAt: null,
-  },
-];
-
 const ApiKeys = () => {
-  const [keys, setKeys] = useState<ApiKey[]>(initialKeys);
+  const [keys, setKeys] = useState<ApiKey[]>([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyPermissions, setNewKeyPermissions] = useState("read");
@@ -246,50 +216,52 @@ const ApiKeys = () => {
             <CardDescription>You have {keys.length} active API keys</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {keys.map((key) => (
-                <div
-                  key={key.id}
-                  className="flex items-center justify-between p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <Key className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium text-foreground">{key.name}</p>
-                        {getPermissionBadge(key.permissions)}
+            {keys.length === 0 ? (
+              <div className="text-center py-8">
+                <Key className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                <p className="text-muted-foreground">No API keys created yet</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Create an API key to get programmatic access
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {keys.map((key) => (
+                  <div
+                    key={key.id}
+                    className="flex items-center justify-between p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                        <Key className="w-5 h-5 text-primary" />
                       </div>
-                      <p className="text-sm font-mono text-muted-foreground">{key.prefix}</p>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-foreground">{key.name}</p>
+                          {getPermissionBadge(key.permissions)}
+                        </div>
+                        <p className="text-sm font-mono text-muted-foreground">{key.prefix}</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-6">
-                    <div className="text-right text-sm">
-                      <div className="flex items-center gap-1 text-muted-foreground">
-                        <Clock className="w-3 h-3" />
-                        <span>
-                          {key.lastUsed
-                            ? `Last used ${new Date(key.lastUsed).toLocaleDateString()}`
-                            : "Never used"}
+                    <div className="flex items-center gap-6">
+                      <div className="text-right text-sm">
+                        <span className="text-muted-foreground">
+                          Created {key.createdAt}
                         </span>
                       </div>
-                      {key.expiresAt && (
-                        <p className="text-xs text-warning">Expires {key.expiresAt}</p>
-                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => handleDeleteKey(key.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                      onClick={() => handleDeleteKey(key.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
