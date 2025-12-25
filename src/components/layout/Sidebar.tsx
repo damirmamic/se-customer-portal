@@ -8,7 +8,6 @@ import {
   Settings,
   Shield,
   Database,
-  Cloud,
   Users,
   ChevronLeft,
   ChevronRight,
@@ -18,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import schneiderLogo from "@/assets/schneider-electric-logo.svg";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -44,15 +44,17 @@ export function Sidebar() {
         collapsed ? "w-16" : "w-64"
       )}
     >
-      {/* Logo */}
+      {/* Schneider Electric Logo */}
       <div className="flex items-center h-16 px-4 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <Cloud className="w-5 h-5 text-primary-foreground" />
-          </div>
-          {!collapsed && (
-            <span className="font-semibold text-foreground">CloudOps Portal</span>
-          )}
+          <img 
+            src={schneiderLogo} 
+            alt="Schneider Electric" 
+            className={cn(
+              "h-8 object-contain transition-all duration-300",
+              collapsed ? "w-8" : "w-full max-w-[180px]"
+            )}
+          />
         </div>
       </div>
 
