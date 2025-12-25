@@ -316,14 +316,23 @@ function mapResourceType(azureType: string): string {
   return typeMap[azureType.toLowerCase()] || 'vm';
 }
 
-// Get metric names for resource type
+// Get metric names for resource type (expanded list)
 function getMetricNamesForType(resourceType: string): string[] {
   const metricMap: Record<string, string[]> = {
-    'microsoft.compute/virtualmachines': ['Percentage CPU', 'Available Memory Bytes'],
-    'microsoft.sql/servers/databases': ['cpu_percent', 'physical_data_read_percent'],
-    'microsoft.web/sites': ['CpuPercentage', 'MemoryPercentage'],
+    'microsoft.compute/virtualmachines': ['Percentage CPU', 'Available Memory Bytes', 'Network In Total', 'Network Out Total'],
+    'microsoft.sql/servers/databases': ['cpu_percent', 'physical_data_read_percent', 'dtu_consumption_percent'],
+    'microsoft.web/sites': ['CpuPercentage', 'MemoryPercentage', 'Requests', 'Http5xx'],
     'microsoft.containerservice/managedclusters': ['node_cpu_usage_percentage', 'node_memory_rss_percentage'],
-    'microsoft.storage/storageaccounts': ['UsedCapacity', 'Availability'],
+    'microsoft.storage/storageaccounts': ['UsedCapacity', 'Transactions', 'Availability'],
+    'microsoft.operationalinsights/workspaces': ['AvailabilityRate_Query', 'Ingestion Volume'],
+    'microsoft.machinelearningservices/workspaces': ['Completed Runs', 'Failed Runs', 'CpuUtilization'],
+    'microsoft.keyvault/vaults': ['ServiceApiHit', 'ServiceApiLatency', 'Availability'],
+    'microsoft.network/loadbalancers': ['VipAvailability', 'DipAvailability'],
+    'microsoft.network/applicationgateways': ['Throughput', 'HealthyHostCount', 'UnhealthyHostCount'],
+    'microsoft.cache/redis': ['usedmemory', 'serverLoad', 'cacheHits', 'cacheMisses'],
+    'microsoft.documentdb/databaseaccounts': ['TotalRequests', 'TotalRequestUnits', 'AvailableStorage'],
+    'microsoft.servicebus/namespaces': ['IncomingMessages', 'OutgoingMessages', 'ActiveConnections'],
+    'microsoft.eventhub/namespaces': ['IncomingMessages', 'OutgoingMessages', 'ThrottledRequests'],
   };
   return metricMap[resourceType.toLowerCase()] || [];
 }
@@ -509,12 +518,19 @@ serve(async (req) => {
       }
 
       const metricNames = getMetricNamesForType(resourceType);
-      const defaultMetrics = ['Percentage CPU', 'Available Memory Bytes', 'Network In Total', 'Network Out Total'];
-      const metricsToFetch = metricNames.length > 0 ? metricNames : defaultMetrics;
       
-      console.log(`Fetching metrics for ${resourceType}:`, metricsToFetch);
+      // If no known metrics for this type, return empty rather than fail
+      if (metricNames.length === 0) {
+        console.log(`No known metrics for resource type: ${resourceType}`);
+        return new Response(
+          JSON.stringify({ metrics: [] }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
       
-      const rawMetrics = await getResourceMetrics(managementToken, resourceId, metricsToFetch, 'PT6H', 'PT5M');
+      console.log(`Fetching metrics for ${resourceType}:`, metricNames);
+      
+      const rawMetrics = await getResourceMetrics(managementToken, resourceId, metricNames, 'PT6H', 'PT1H');
 
       // Transform to time-series format for charts
       const formattedMetrics = rawMetrics.map(metric => {
