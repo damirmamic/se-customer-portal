@@ -81,13 +81,18 @@ async function getAzureToken(scope: string): Promise<string> {
 
 // List Azure subscriptions
 async function listSubscriptions(token: string): Promise<any[]> {
-  const response = await fetch('https://management.azure.com/subscriptions?api-version=2022-12-01', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const response = await fetch(
+    'https://management.azure.com/subscriptions?api-version=2022-12-01',
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
 
   if (!response.ok) {
-    console.error('Failed to list subscriptions:', await response.text());
-    return [];
+    const details = await response.text();
+    throw new Error(
+      `Azure Management API list-subscriptions failed (${response.status}): ${details}`
+    );
   }
 
   const data = await response.json();
@@ -102,8 +107,10 @@ async function listResources(token: string, subscriptionId: string): Promise<Azu
   );
 
   if (!response.ok) {
-    console.error('Failed to list resources:', await response.text());
-    return [];
+    const details = await response.text();
+    throw new Error(
+      `Azure Management API list-resources failed (${response.status}): ${details}`
+    );
   }
 
   const data = await response.json();
@@ -125,8 +132,10 @@ async function getResourceMetrics(
   });
 
   if (!response.ok) {
-    console.error('Failed to get metrics:', await response.text());
-    return [];
+    const details = await response.text();
+    throw new Error(
+      `Azure Management API get-metrics failed (${response.status}): ${details}`
+    );
   }
 
   const data = await response.json();
@@ -141,8 +150,10 @@ async function getAlerts(token: string, subscriptionId: string): Promise<AzureAl
   );
 
   if (!response.ok) {
-    console.error('Failed to get alerts:', await response.text());
-    return [];
+    const details = await response.text();
+    throw new Error(
+      `Azure Management API get-alerts failed (${response.status}): ${details}`
+    );
   }
 
   const data = await response.json();
@@ -168,8 +179,8 @@ async function queryLogAnalytics(
   );
 
   if (!response.ok) {
-    console.error('Log Analytics query failed:', await response.text());
-    return null;
+    const details = await response.text();
+    throw new Error(`Azure Log Analytics query failed (${response.status}): ${details}`);
   }
 
   return await response.json();
@@ -235,8 +246,39 @@ serve(async (req) => {
         );
       }
 
-      const resources = await listResources(managementToken, subscriptionId);
-      
+      const [resources, alerts] = await Promise.all([
+        listResources(managementToken, subscriptionId),
+        getAlerts(managementToken, subscriptionId),
+      ]);
+
+      const activeAlerts = alerts.filter(
+        (a) =>
+          a.properties.alertState === 'New' || a.properties.alertState === 'Acknowledged'
+      );
+
+      const severityRank: Record<string, number> = {
+        Sev0: 3,
+        Sev1: 3,
+        Sev2: 2,
+        Sev3: 1,
+        Sev4: 0,
+      };
+
+      const statusForRank = (rank: number) => {
+        if (rank >= 3) return 'critical';
+        if (rank >= 2) return 'warning';
+        return 'healthy';
+      };
+
+      const alertRankByResourceId = new Map<string, number>();
+      for (const alert of activeAlerts) {
+        const target = alert.properties.targetResource;
+        if (!target) continue;
+        const rank = severityRank[alert.properties.severity] ?? 1;
+        const prev = alertRankByResourceId.get(target) ?? -1;
+        if (rank > prev) alertRankByResourceId.set(target, rank);
+      }
+
       // Map resources to our dashboard format
       const mappedResources = await Promise.all(
         resources.slice(0, 20).map(async (resource) => {
@@ -251,17 +293,22 @@ serve(async (req) => {
                 const latestData = metric.timeseries?.[0]?.data?.slice(-1)[0];
                 if (latestData?.average !== undefined) {
                   const metricName = metric.name.value.toLowerCase();
+
                   if (metricName.includes('cpu')) {
                     cpu = Math.round(latestData.average);
-                  } else if (metricName.includes('memory')) {
+                  }
+
+                  if (metricName.includes('memory') && !metricName.includes('bytes')) {
                     memory = Math.round(latestData.average);
                   }
                 }
               }
-            } catch (e) {
-              console.log('Could not get metrics for', resource.name);
+            } catch {
+              // ignore per-resource metric errors
             }
           }
+
+          const statusRank = alertRankByResourceId.get(resource.id);
 
           return {
             id: resource.id,
@@ -269,8 +316,8 @@ serve(async (req) => {
             type: mapResourceType(resource.type),
             azureType: resource.type,
             region: resource.location,
-            status: 'healthy',
-            uptime: 99.9 + Math.random() * 0.09,
+            status: statusForRank(statusRank ?? 0),
+            uptime: null,
             cpu,
             memory,
             subscription: subscriptionId,
