@@ -27,17 +27,9 @@ import {
   UserPlus, 
   Mail, 
   Shield, 
-  MoreVertical, 
   Search,
-  Clock,
   CheckCircle2
 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 
 interface TeamMember {
@@ -46,52 +38,7 @@ interface TeamMember {
   email: string;
   role: "admin" | "operations_engineer" | "customer";
   status: "active" | "pending" | "inactive";
-  lastActive: string;
-  avatar?: string;
 }
-
-const teamMembers: TeamMember[] = [
-  {
-    id: "1",
-    name: "John Smith",
-    email: "john.smith@company.com",
-    role: "admin",
-    status: "active",
-    lastActive: "2024-12-24T10:30:00Z",
-  },
-  {
-    id: "2",
-    name: "Sarah Johnson",
-    email: "sarah.johnson@company.com",
-    role: "operations_engineer",
-    status: "active",
-    lastActive: "2024-12-24T09:15:00Z",
-  },
-  {
-    id: "3",
-    name: "Mike Chen",
-    email: "mike.chen@company.com",
-    role: "operations_engineer",
-    status: "active",
-    lastActive: "2024-12-24T11:00:00Z",
-  },
-  {
-    id: "4",
-    name: "Emily Davis",
-    email: "emily.davis@company.com",
-    role: "customer",
-    status: "active",
-    lastActive: "2024-12-23T16:45:00Z",
-  },
-  {
-    id: "5",
-    name: "Alex Wilson",
-    email: "alex.wilson@company.com",
-    role: "customer",
-    status: "pending",
-    lastActive: "",
-  },
-];
 
 const getRoleBadge = (role: TeamMember["role"]) => {
   const styles = {
@@ -107,36 +54,32 @@ const getRoleBadge = (role: TeamMember["role"]) => {
   return <Badge className={styles[role]}>{labels[role]}</Badge>;
 };
 
-const getStatusBadge = (status: TeamMember["status"]) => {
-  const styles = {
-    active: "text-success border-success/30",
-    pending: "text-warning border-warning/30",
-    inactive: "text-muted-foreground",
-  };
-  return (
-    <Badge variant="outline" className={styles[status]}>
-      {status === "active" && <CheckCircle2 className="w-3 h-3 mr-1" />}
-      {status === "pending" && <Clock className="w-3 h-3 mr-1" />}
-      {status}
-    </Badge>
-  );
-};
-
 const Team = () => {
+  const [members, setMembers] = useState<TeamMember[]>([]);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("customer");
+  const [inviteName, setInviteName] = useState("");
+  const [inviteRole, setInviteRole] = useState<"admin" | "operations_engineer" | "customer">("customer");
 
   const handleInvite = () => {
+    const newMember: TeamMember = {
+      id: Math.random().toString(36).substring(7),
+      name: inviteName || inviteEmail.split('@')[0],
+      email: inviteEmail,
+      role: inviteRole,
+      status: "pending",
+    };
+    setMembers([...members, newMember]);
     toast.success(`Invitation sent to ${inviteEmail}`);
     setShowInviteDialog(false);
     setInviteEmail("");
+    setInviteName("");
     setInviteRole("customer");
   };
 
-  const activeMembers = teamMembers.filter((m) => m.status === "active").length;
-  const admins = teamMembers.filter((m) => m.role === "admin").length;
-  const engineers = teamMembers.filter((m) => m.role === "operations_engineer").length;
+  const activeMembers = members.filter((m) => m.status === "active").length;
+  const admins = members.filter((m) => m.role === "admin").length;
+  const engineers = members.filter((m) => m.role === "operations_engineer").length;
 
   return (
     <MainLayout>
@@ -163,6 +106,15 @@ const Team = () => {
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
+                  <Label htmlFor="name">Name (optional)</Label>
+                  <Input
+                    id="name"
+                    placeholder="John Doe"
+                    value={inviteName}
+                    onChange={(e) => setInviteName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="email">Email Address</Label>
                   <Input
                     id="email"
@@ -174,7 +126,7 @@ const Team = () => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="role">Role</Label>
-                  <Select value={inviteRole} onValueChange={setInviteRole}>
+                  <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as TeamMember["role"])}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -205,7 +157,7 @@ const Team = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Total Members</p>
-                  <p className="text-2xl font-bold text-foreground">{teamMembers.length}</p>
+                  <p className="text-2xl font-bold text-foreground">{members.length}</p>
                 </div>
                 <Users className="w-8 h-8 text-primary" />
               </div>
@@ -263,56 +215,51 @@ const Team = () => {
             <CardDescription>All members with access to this organization</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {teamMembers.map((member) => (
-                <div
-                  key={member.id}
-                  className="flex items-center justify-between p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center gap-4">
-                    <Avatar className="h-10 w-10">
-                      <AvatarFallback className="bg-primary/20 text-primary">
-                        {member.name
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-medium text-foreground">{member.name}</h3>
-                        {getRoleBadge(member.role)}
-                        {getStatusBadge(member.status)}
+            {members.length === 0 ? (
+              <div className="text-center py-8">
+                <Users className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                <p className="text-muted-foreground">No team members yet</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Invite team members to collaborate
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {members.map((member) => (
+                  <div
+                    key={member.id}
+                    className="flex items-center justify-between p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      <Avatar className="h-10 w-10">
+                        <AvatarFallback className="bg-primary/20 text-primary">
+                          {member.name
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-foreground">{member.name}</h3>
+                          {getRoleBadge(member.role)}
+                          <Badge 
+                            variant="outline" 
+                            className={member.status === "active" ? "text-success border-success/30" : "text-warning border-warning/30"}
+                          >
+                            {member.status}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground flex items-center gap-1">
+                          <Mail className="w-3 h-3" />
+                          {member.email}
+                        </p>
                       </div>
-                      <p className="text-sm text-muted-foreground flex items-center gap-1">
-                        <Mail className="w-3 h-3" />
-                        {member.email}
-                      </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    {member.lastActive && (
-                      <span className="text-sm text-muted-foreground">
-                        Last active {new Date(member.lastActive).toLocaleDateString()}
-                      </span>
-                    )}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem>View Profile</DropdownMenuItem>
-                        <DropdownMenuItem>Change Role</DropdownMenuItem>
-                        <DropdownMenuItem>Resend Invitation</DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive">Remove Member</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
