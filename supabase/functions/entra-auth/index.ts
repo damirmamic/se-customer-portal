@@ -1,12 +1,26 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// ========== CORS Configuration ==========
+const ALLOWED_ORIGINS = [
+  'https://rdzwqkklwyuonjqwiczh.lovableproject.com',
+  'https://rdzwqkklwyuonjqwiczh.lovable.app',
+  'http://localhost:5173',
+  'http://localhost:8080',
+];
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
 
 // Entra ID group to role mapping - configure these to match your Entra ID groups
+// IMPORTANT: Only use server-side mapping, never accept group mapping from client
 const GROUP_ROLE_MAPPING: Record<string, 'customer' | 'operations_engineer' | 'admin'> = {
   // Add your Entra ID group IDs here
   // Example: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx': 'admin',
@@ -33,13 +47,15 @@ interface EntraGroupMembership {
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { action, code, redirectUri, groupMapping, codeChallenge, codeVerifier } = await req.json();
+    const { action, code, redirectUri, codeChallenge, codeVerifier } = await req.json();
 
     const clientId = Deno.env.get('AZURE_CLIENT_ID');
     const clientSecret = Deno.env.get('AZURE_CLIENT_SECRET');
@@ -48,7 +64,7 @@ serve(async (req) => {
     if (!clientId) {
       console.error('Missing AZURE_CLIENT_ID');
       return new Response(
-        JSON.stringify({ error: 'Azure client ID not configured' }),
+        JSON.stringify({ error: 'Authentication service not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -56,19 +72,26 @@ serve(async (req) => {
     if (!clientSecret) {
       console.error('Missing AZURE_CLIENT_SECRET');
       return new Response(
-        JSON.stringify({ error: 'Azure client secret not configured' }),
+        JSON.stringify({ error: 'Authentication service not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    // Use group mapping from request if provided, otherwise use default
-    const effectiveGroupMapping = groupMapping || GROUP_ROLE_MAPPING;
 
     if (action === 'get-auth-url') {
       // Generate authorization URL for Entra ID with PKCE
       if (!redirectUri || !codeChallenge) {
         return new Response(
-          JSON.stringify({ error: 'Missing redirectUri or codeChallenge' }),
+          JSON.stringify({ error: 'Missing required parameters' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Validate redirect URI against allowed origins
+      const redirectOrigin = new URL(redirectUri).origin;
+      if (!ALLOWED_ORIGINS.includes(redirectOrigin)) {
+        console.error('Invalid redirect URI origin:', redirectOrigin);
+        return new Response(
+          JSON.stringify({ error: 'Invalid redirect URI' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -96,14 +119,24 @@ serve(async (req) => {
       // Exchange authorization code for tokens (PKCE)
       if (!code || !redirectUri) {
         return new Response(
-          JSON.stringify({ error: 'Missing authorization code or redirectUri' }),
+          JSON.stringify({ error: 'Missing required parameters' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
       if (!codeVerifier) {
         return new Response(
-          JSON.stringify({ error: 'PKCE code verifier is required' }),
+          JSON.stringify({ error: 'Missing required parameters' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Validate redirect URI against allowed origins
+      const redirectOrigin = new URL(redirectUri).origin;
+      if (!ALLOWED_ORIGINS.includes(redirectOrigin)) {
+        console.error('Invalid redirect URI origin:', redirectOrigin);
+        return new Response(
+          JSON.stringify({ error: 'Invalid redirect URI' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -131,7 +164,7 @@ serve(async (req) => {
         const error = await tokenResponse.text();
         console.error('Token exchange failed:', error);
         return new Response(
-          JSON.stringify({ error: 'Failed to exchange code for token' }),
+          JSON.stringify({ error: 'Authentication failed' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -147,7 +180,7 @@ serve(async (req) => {
       if (!userResponse.ok) {
         console.error('Failed to get user info');
         return new Response(
-          JSON.stringify({ error: 'Failed to get user info' }),
+          JSON.stringify({ error: 'Failed to get user information' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -169,9 +202,9 @@ serve(async (req) => {
         console.warn('Could not fetch group memberships');
       }
 
-      // Determine roles based on group membership
+      // Determine roles based on group membership - ONLY use server-side mapping
       const roles: ('customer' | 'operations_engineer' | 'admin')[] = [];
-      for (const [groupId, role] of Object.entries(effectiveGroupMapping)) {
+      for (const [groupId, role] of Object.entries(GROUP_ROLE_MAPPING)) {
         if (userGroups.includes(groupId)) {
           roles.push(role as 'customer' | 'operations_engineer' | 'admin');
         }
@@ -197,9 +230,19 @@ serve(async (req) => {
       let userId: string;
       let existingUser = existingUsers?.users?.find(u => u.email === email);
 
+      // Capture old roles for audit logging
+      let oldRoles: { role: string }[] = [];
+
       if (existingUser) {
         userId = existingUser.id;
         console.log('Found existing user:', userId);
+        
+        // Fetch existing roles for audit
+        const { data: currentRoles } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', userId);
+        oldRoles = currentRoles || [];
       } else {
         // Create new user
         const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
@@ -218,7 +261,7 @@ serve(async (req) => {
         if (createError) {
           console.error('Failed to create user:', createError);
           return new Response(
-            JSON.stringify({ error: 'Failed to create user' }),
+            JSON.stringify({ error: 'Failed to create user account' }),
             { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
@@ -233,7 +276,7 @@ serve(async (req) => {
 
       // Insert new roles
       for (const role of roles) {
-        const matchingGroupId = Object.entries(effectiveGroupMapping).find(([, r]) => r === role)?.[0];
+        const matchingGroupId = Object.entries(GROUP_ROLE_MAPPING).find(([, r]) => r === role)?.[0];
         await supabase.from('user_roles').insert({
           user_id: userId,
           role,
@@ -241,6 +284,19 @@ serve(async (req) => {
         });
       }
       console.log('Synced roles for user');
+
+      // Audit log the role change
+      const roleChangeLog = {
+        timestamp: new Date().toISOString(),
+        user_id: userId,
+        email: email,
+        action: 'entra_sso_sync',
+        old_roles: oldRoles.map(r => r.role),
+        new_roles: roles,
+        entra_groups: userGroups,
+        entra_id: userInfo.id,
+      };
+      console.log('AUDIT: Role sync completed', JSON.stringify(roleChangeLog));
 
       // Generate a session for the user
       const { data: sessionData, error: sessionError } = await supabase.auth.admin.generateLink({
@@ -252,7 +308,7 @@ serve(async (req) => {
       if (sessionError) {
         console.error('Failed to generate session:', sessionError);
         return new Response(
-          JSON.stringify({ error: 'Failed to generate session' }),
+          JSON.stringify({ error: 'Failed to create session' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -277,10 +333,11 @@ serve(async (req) => {
     );
 
   } catch (error) {
+    const corsHeaders = getCorsHeaders(req);
     console.error('Error in entra-auth function:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    // Return generic error to client, log details server-side
     return new Response(
-      JSON.stringify({ error: errorMessage }),
+      JSON.stringify({ error: 'An error occurred during authentication' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

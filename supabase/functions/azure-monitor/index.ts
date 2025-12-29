@@ -1,9 +1,76 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// ========== CORS Configuration ==========
+const ALLOWED_ORIGINS = [
+  'https://rdzwqkklwyuonjqwiczh.lovableproject.com',
+  'https://rdzwqkklwyuonjqwiczh.lovable.app',
+  'http://localhost:5173',
+  'http://localhost:8080',
+];
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
+
+// ========== Role Verification ==========
+type AppRole = 'customer' | 'operations_engineer' | 'admin';
+
+async function verifyUserRole(req: Request, requiredRoles: AppRole[]): Promise<{ authorized: boolean; userId?: string; userRoles?: AppRole[] }> {
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader) {
+    console.log('No authorization header found');
+    return { authorized: false };
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+  // Use anon key to verify the user's JWT
+  const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { headers: { Authorization: authHeader } }
+  });
+
+  const { data: { user }, error: userError } = await supabaseAuth.auth.getUser();
+  if (userError || !user) {
+    console.log('Failed to get user from token:', userError?.message);
+    return { authorized: false };
+  }
+
+  // Use service role to query user_roles (bypasses RLS)
+  const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  });
+
+  const { data: roles, error: rolesError } = await supabaseAdmin
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', user.id);
+
+  if (rolesError) {
+    console.log('Failed to fetch user roles:', rolesError.message);
+    return { authorized: false };
+  }
+
+  const userRoles = roles?.map(r => r.role as AppRole) || [];
+  const hasRequiredRole = userRoles.some(role => requiredRoles.includes(role));
+
+  console.log(`User ${user.id} has roles: ${userRoles.join(', ')}. Required: ${requiredRoles.join(', ')}. Authorized: ${hasRequiredRole}`);
+
+  return { 
+    authorized: hasRequiredRole, 
+    userId: user.id,
+    userRoles 
+  };
+}
 
 // ========== Input Validation ==========
 
@@ -30,44 +97,44 @@ const MAX_QUERY_LENGTH = 5000;
 
 function validateSubscriptionId(subscriptionId: string): void {
   if (!subscriptionId || typeof subscriptionId !== 'string') {
-    throw new Error('subscriptionId is required and must be a string');
+    throw new Error('Subscription ID is required');
   }
   if (!UUID_REGEX.test(subscriptionId)) {
-    throw new Error('subscriptionId must be a valid UUID format');
+    throw new Error('Invalid subscription ID format');
   }
 }
 
 function validateResourceId(resourceId: string): void {
   if (!resourceId || typeof resourceId !== 'string') {
-    throw new Error('resourceId is required and must be a string');
+    throw new Error('Resource ID is required');
   }
   if (resourceId.length > 1000) {
-    throw new Error('resourceId exceeds maximum length');
+    throw new Error('Resource ID exceeds maximum length');
   }
   if (!RESOURCE_ID_REGEX.test(resourceId)) {
-    throw new Error('resourceId must be a valid Azure resource ID format');
+    throw new Error('Invalid resource ID format');
   }
 }
 
 function validateWorkspaceId(workspaceId: string): void {
   if (!workspaceId || typeof workspaceId !== 'string') {
-    throw new Error('workspaceId is required and must be a string');
+    throw new Error('Workspace ID is required');
   }
   if (!WORKSPACE_ID_REGEX.test(workspaceId)) {
-    throw new Error('workspaceId must be a valid UUID format');
+    throw new Error('Invalid workspace ID format');
   }
 }
 
 function validateKqlQuery(query: string): void {
   if (!query || typeof query !== 'string') {
-    throw new Error('query is required and must be a string');
+    throw new Error('Query is required');
   }
   if (query.length > MAX_QUERY_LENGTH) {
-    throw new Error(`query exceeds maximum length of ${MAX_QUERY_LENGTH} characters`);
+    throw new Error('Query exceeds maximum length');
   }
   for (const pattern of DANGEROUS_KQL_PATTERNS) {
     if (pattern.test(query)) {
-      throw new Error('query contains disallowed patterns');
+      throw new Error('Query contains disallowed patterns');
     }
   }
 }
@@ -83,10 +150,10 @@ const VALID_ACTIONS = [
 
 function validateAction(action: unknown): asserts action is string {
   if (!action || typeof action !== 'string') {
-    throw new Error('action is required and must be a string');
+    throw new Error('Action is required');
   }
   if (!VALID_ACTIONS.includes(action)) {
-    throw new Error(`Invalid action. Must be one of: ${VALID_ACTIONS.join(', ')}`);
+    throw new Error('Invalid action');
   }
 }
 
@@ -159,7 +226,7 @@ async function getAzureToken(scope: string): Promise<string> {
   if (!response.ok) {
     const error = await response.text();
     console.error('Azure token error:', error);
-    throw new Error('Failed to get Azure access token');
+    throw new Error('Failed to authenticate with Azure');
   }
 
   const data: AzureTokenResponse = await response.json();
@@ -177,9 +244,8 @@ async function listSubscriptions(token: string): Promise<any[]> {
 
   if (!response.ok) {
     const details = await response.text();
-    throw new Error(
-      `Azure Management API list-subscriptions failed (${response.status}): ${details}`
-    );
+    console.error('Azure subscriptions API error:', details);
+    throw new Error('Failed to fetch Azure subscriptions');
   }
 
   const data = await response.json();
@@ -195,9 +261,8 @@ async function listResources(token: string, subscriptionId: string): Promise<Azu
 
   if (!response.ok) {
     const details = await response.text();
-    throw new Error(
-      `Azure Management API list-resources failed (${response.status}): ${details}`
-    );
+    console.error('Azure resources API error:', details);
+    throw new Error('Failed to fetch Azure resources');
   }
 
   const data = await response.json();
@@ -280,11 +345,10 @@ async function getResourceMetrics(
   const first = await fetchOnce(interval);
   if (first.ok) return first.metrics;
 
-  // Helpful permission message (this is NOT the case in your logs, but good to surface)
+  // Permission denied - log server-side, return generic error
   if (first.status === 401 || first.status === 403) {
-    throw new Error(
-      `Azure metrics permission denied (${first.status}). Ensure the service principal has Monitoring Reader (or Reader) at least. Details: ${first.details}`
-    );
+    console.error(`Azure metrics permission denied for resource:`, first.details);
+    throw new Error('Unable to fetch metrics. Check Azure permissions.');
   }
 
   // Retry with Azure's suggested common time grain (storage metrics often require PT1H)
@@ -294,12 +358,12 @@ async function getResourceMetrics(
     if (retryInterval !== interval) {
       const second = await fetchOnce(retryInterval);
       if (second.ok) return second.metrics;
-      console.log(`Metrics API error for ${resourceId}:`, second.details);
+      console.error(`Metrics API retry error:`, second.details);
       return [];
     }
   }
 
-  console.log(`Metrics API error for ${resourceId}:`, first.details);
+  console.error(`Metrics API error:`, first.details);
   return [];
 }
 
@@ -349,9 +413,8 @@ async function getAlerts(token: string, subscriptionId: string): Promise<AzureAl
 
   if (!response.ok) {
     const details = await response.text();
-    throw new Error(
-      `Azure Management API get-alerts failed (${response.status}): ${details}`
-    );
+    console.error('Azure alerts API error:', details);
+    throw new Error('Failed to fetch Azure alerts');
   }
 
   const data = await response.json();
@@ -378,7 +441,8 @@ async function queryLogAnalytics(
 
   if (!response.ok) {
     const details = await response.text();
-    throw new Error(`Azure Log Analytics query failed (${response.status}): ${details}`);
+    console.error('Log Analytics query error:', details);
+    throw new Error('Failed to execute log query');
   }
 
   return await response.json();
@@ -436,6 +500,8 @@ function getMetricUnit(metricName: string): string {
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -448,6 +514,18 @@ serve(async (req) => {
     validateAction(action);
     
     console.log('Azure Monitor action:', action);
+
+    // Server-side role verification - require operations_engineer or admin role
+    const { authorized, userId, userRoles } = await verifyUserRole(req, ['operations_engineer', 'admin']);
+    if (!authorized) {
+      console.log('Access denied: User lacks required role for azure-monitor');
+      return new Response(
+        JSON.stringify({ error: 'Insufficient permissions. Operations Engineer or Admin role required.' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`Authorized user ${userId} with roles [${userRoles?.join(', ')}] accessing ${action}`);
 
     // Get token for Azure Management API
     const managementToken = await getAzureToken('https://management.azure.com/.default');
@@ -688,9 +766,11 @@ serve(async (req) => {
     );
 
   } catch (error) {
+    const corsHeaders = getCorsHeaders(req);
     console.error('Error in azure-monitor function:', error);
+    // Return generic error message to client, log details server-side
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      JSON.stringify({ error: 'An error occurred processing your request' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
