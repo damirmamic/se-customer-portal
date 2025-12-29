@@ -5,6 +5,93 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ========== Input Validation ==========
+
+// Azure Subscription ID must be a valid UUID
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Azure Resource ID pattern: /subscriptions/{subId}/resourceGroups/{rgName}/providers/{provider}/{type}/{name}
+// Must start with /subscriptions/ and contain only allowed characters
+const RESOURCE_ID_REGEX = /^\/subscriptions\/[0-9a-f-]+\/resourceGroups\/[a-zA-Z0-9_.-]+\/providers\/[a-zA-Z0-9._/-]+$/i;
+
+// Workspace ID (Log Analytics) - typically a UUID
+const WORKSPACE_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// KQL query validation - block dangerous patterns
+const DANGEROUS_KQL_PATTERNS = [
+  /\bexternaldata\b/i,      // Can read external data
+  /\bexternaltable\b/i,     // Can reference external tables  
+  /\bmaterialize\b/i,       // Can cause resource exhaustion
+  /\binvoke\b/i,            // Can invoke functions
+  /\bevaluate\b.*\bhttp/i,  // HTTP calls
+];
+
+const MAX_QUERY_LENGTH = 5000;
+
+function validateSubscriptionId(subscriptionId: string): void {
+  if (!subscriptionId || typeof subscriptionId !== 'string') {
+    throw new Error('subscriptionId is required and must be a string');
+  }
+  if (!UUID_REGEX.test(subscriptionId)) {
+    throw new Error('subscriptionId must be a valid UUID format');
+  }
+}
+
+function validateResourceId(resourceId: string): void {
+  if (!resourceId || typeof resourceId !== 'string') {
+    throw new Error('resourceId is required and must be a string');
+  }
+  if (resourceId.length > 1000) {
+    throw new Error('resourceId exceeds maximum length');
+  }
+  if (!RESOURCE_ID_REGEX.test(resourceId)) {
+    throw new Error('resourceId must be a valid Azure resource ID format');
+  }
+}
+
+function validateWorkspaceId(workspaceId: string): void {
+  if (!workspaceId || typeof workspaceId !== 'string') {
+    throw new Error('workspaceId is required and must be a string');
+  }
+  if (!WORKSPACE_ID_REGEX.test(workspaceId)) {
+    throw new Error('workspaceId must be a valid UUID format');
+  }
+}
+
+function validateKqlQuery(query: string): void {
+  if (!query || typeof query !== 'string') {
+    throw new Error('query is required and must be a string');
+  }
+  if (query.length > MAX_QUERY_LENGTH) {
+    throw new Error(`query exceeds maximum length of ${MAX_QUERY_LENGTH} characters`);
+  }
+  for (const pattern of DANGEROUS_KQL_PATTERNS) {
+    if (pattern.test(query)) {
+      throw new Error('query contains disallowed patterns');
+    }
+  }
+}
+
+const VALID_ACTIONS = [
+  'list-subscriptions',
+  'list-resources',
+  'get-alerts',
+  'get-metrics',
+  'query-logs',
+  'get-dashboard-summary',
+];
+
+function validateAction(action: unknown): asserts action is string {
+  if (!action || typeof action !== 'string') {
+    throw new Error('action is required and must be a string');
+  }
+  if (!VALID_ACTIONS.includes(action)) {
+    throw new Error(`Invalid action. Must be one of: ${VALID_ACTIONS.join(', ')}`);
+  }
+}
+
+// ========== Interfaces ==========
+
 interface AzureTokenResponse {
   access_token: string;
   expires_in: number;
@@ -354,7 +441,11 @@ serve(async (req) => {
   }
 
   try {
-    const { action, subscriptionId, resourceId, workspaceId, query } = await req.json();
+    const body = await req.json();
+    const { action, subscriptionId, resourceId, workspaceId, query } = body;
+    
+    // Validate action
+    validateAction(action);
     
     console.log('Azure Monitor action:', action);
 
@@ -370,12 +461,7 @@ serve(async (req) => {
     }
 
     if (action === 'list-resources') {
-      if (!subscriptionId) {
-        return new Response(
-          JSON.stringify({ error: 'subscriptionId is required' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      validateSubscriptionId(subscriptionId);
 
       const [resources, alerts] = await Promise.all([
         listResources(managementToken, subscriptionId),
@@ -472,12 +558,7 @@ serve(async (req) => {
     }
 
     if (action === 'get-alerts') {
-      if (!subscriptionId) {
-        return new Response(
-          JSON.stringify({ error: 'subscriptionId is required' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      validateSubscriptionId(subscriptionId);
 
       const alerts = await getAlerts(managementToken, subscriptionId);
       
@@ -499,12 +580,7 @@ serve(async (req) => {
     }
 
     if (action === 'get-metrics') {
-      if (!resourceId) {
-        return new Response(
-          JSON.stringify({ error: 'resourceId is required' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      validateResourceId(resourceId);
 
       // Extract resource type from resource ID
       const resourceTypeParts = resourceId.split('/providers/');
@@ -555,12 +631,8 @@ serve(async (req) => {
     }
 
     if (action === 'query-logs') {
-      if (!workspaceId || !query) {
-        return new Response(
-          JSON.stringify({ error: 'workspaceId and query are required' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      validateWorkspaceId(workspaceId);
+      validateKqlQuery(query);
 
       // Get token for Log Analytics API
       const logToken = await getAzureToken('https://api.loganalytics.io/.default');
@@ -573,12 +645,7 @@ serve(async (req) => {
     }
 
     if (action === 'get-dashboard-summary') {
-      if (!subscriptionId) {
-        return new Response(
-          JSON.stringify({ error: 'subscriptionId is required' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      validateSubscriptionId(subscriptionId);
 
       // Fetch resources and alerts in parallel
       const [resources, alerts] = await Promise.all([
@@ -614,6 +681,7 @@ serve(async (req) => {
       );
     }
 
+    // This should never be reached due to validateAction, but kept for safety
     return new Response(
       JSON.stringify({ error: 'Invalid action' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
