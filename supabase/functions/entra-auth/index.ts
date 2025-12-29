@@ -284,20 +284,39 @@ serve(async (req) => {
         console.log('Created new user:', userId);
       }
 
-      // Sync roles from Entra ID groups
-      // First, delete existing roles
-      await supabase.from('user_roles').delete().eq('user_id', userId);
-
-      // Insert new roles
-      for (const role of roles) {
-        const matchingGroupId = Object.entries(GROUP_ROLE_MAPPING).find(([, r]) => r === role)?.[0];
+      // Determine final roles: use mapped roles from Entra groups if any exist,
+      // otherwise preserve existing database roles (don't downgrade users)
+      let roles: ('customer' | 'operations_engineer' | 'admin')[];
+      if (mappedRoles.length > 0) {
+        // We have Entra group mappings, use them
+        roles = mappedRoles;
+        console.log('Using roles from Entra groups:', roles);
+        
+        // Sync roles from Entra ID groups
+        await supabase.from('user_roles').delete().eq('user_id', userId);
+        for (const role of roles) {
+          const matchingGroupId = Object.entries(GROUP_ROLE_MAPPING).find(([, r]) => r === role)?.[0];
+          await supabase.from('user_roles').insert({
+            user_id: userId,
+            role,
+            entra_group_id: matchingGroupId || null,
+          });
+        }
+        console.log('Synced roles for user');
+      } else if (oldRoles.length > 0) {
+        // No Entra group mappings, preserve existing roles
+        roles = oldRoles.map(r => r.role as 'customer' | 'operations_engineer' | 'admin');
+        console.log('Preserving existing roles (no Entra group mappings):', roles);
+      } else {
+        // New user with no mapped groups, default to customer
+        roles = ['customer'];
+        console.log('New user, defaulting to customer role');
         await supabase.from('user_roles').insert({
           user_id: userId,
-          role,
-          entra_group_id: matchingGroupId || null,
+          role: 'customer',
+          entra_group_id: null,
         });
       }
-      console.log('Synced roles for user');
 
       // Audit log the role change
       const roleChangeLog = {
