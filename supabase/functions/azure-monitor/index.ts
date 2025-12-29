@@ -3,19 +3,30 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ========== CORS Configuration ==========
 const ALLOWED_ORIGINS = [
-  'https://rdzwqkklwyuonjqwiczh.lovableproject.com',
-  'https://rdzwqkklwyuonjqwiczh.lovable.app',
-  'https://95103f96-977a-411a-b2a6-8764ddedcdcf.lovableproject.com',
-  'https://id-preview--95103f96-977a-411a-b2a6-8764ddedcdcf.lovable.app',
-  'https://preview--se-customer-portal.lovable.app',
-  'https://se-customer-portal.lovable.app',
   'http://localhost:5173',
   'http://localhost:8080',
 ];
 
+const FALLBACK_ORIGIN = 'https://rdzwqkklwyuonjqwiczh.lovableproject.com';
+
+function isAllowedOrigin(origin: string): boolean {
+  if (!origin) return false;
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+
+  try {
+    const url = new URL(origin);
+    return (
+      url.protocol === 'https:' &&
+      (url.hostname.endsWith('.lovable.app') || url.hostname.endsWith('.lovableproject.com'))
+    );
+  } catch {
+    return false;
+  }
+}
+
 function getCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') || '';
-  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const allowedOrigin = isAllowedOrigin(origin) ? origin : FALLBACK_ORIGIN;
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
