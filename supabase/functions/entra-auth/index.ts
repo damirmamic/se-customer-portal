@@ -37,8 +37,8 @@ function getCorsHeaders(req: Request): Record<string, string> {
 // Entra ID group to role mapping - configure these to match your Entra ID groups
 // IMPORTANT: Only use server-side mapping, never accept group mapping from client
 const GROUP_ROLE_MAPPING: Record<string, 'customer' | 'operations_engineer' | 'admin'> = {
-  // Add your Entra ID group IDs here
-  // Example: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx': 'admin',
+  // Map a specific Entra group to operations_engineer role
+  '769e43cb-abfd-4421-8e74-ecd14725d796': 'operations_engineer',
 };
 
 interface EntraTokenResponse {
