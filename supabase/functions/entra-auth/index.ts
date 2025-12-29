@@ -103,7 +103,7 @@ serve(async (req) => {
 
       // Validate redirect URI against allowed origins
       const redirectOrigin = new URL(redirectUri).origin;
-      if (!ALLOWED_ORIGINS.includes(redirectOrigin)) {
+      if (!isAllowedOrigin(redirectOrigin)) {
         console.error('Invalid redirect URI origin:', redirectOrigin);
         return new Response(
           JSON.stringify({ error: 'Invalid redirect URI' }),
@@ -148,7 +148,7 @@ serve(async (req) => {
 
       // Validate redirect URI against allowed origins
       const redirectOrigin = new URL(redirectUri).origin;
-      if (!ALLOWED_ORIGINS.includes(redirectOrigin)) {
+      if (!isAllowedOrigin(redirectOrigin)) {
         console.error('Invalid redirect URI origin:', redirectOrigin);
         return new Response(
           JSON.stringify({ error: 'Invalid redirect URI' }),
