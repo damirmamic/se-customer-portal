@@ -7,6 +7,8 @@ const ALLOWED_ORIGINS = [
   'https://rdzwqkklwyuonjqwiczh.lovable.app',
   'https://95103f96-977a-411a-b2a6-8764ddedcdcf.lovableproject.com',
   'https://id-preview--95103f96-977a-411a-b2a6-8764ddedcdcf.lovable.app',
+  'https://preview--se-customer-portal.lovable.app',
+  'https://se-customer-portal.lovable.app',
   'http://localhost:5173',
   'http://localhost:8080',
 ];
