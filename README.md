@@ -1,8 +1,20 @@
-# Welcome to your Lovable project
+# SE Customer Portal
+
+A comprehensive Azure resource management and monitoring portal built with React, TypeScript, and Supabase.
 
 ## Project info
 
 **URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+
+## Features
+
+- 🔐 **Azure AD Authentication**: Secure sign-in with Microsoft Entra ID (Azure AD)
+- 📊 **Azure Resource Monitoring**: Real-time monitoring of Azure resources
+- 📈 **Metrics & Alerts**: View metrics, alerts, and health status
+- 👥 **Role-Based Access Control**: Customer, Operations Engineer, and Admin roles
+- 🔄 **Auto-Refresh**: Automatic data updates with retry logic
+- 🎯 **Subscription Management**: Multi-subscription support
+- 🧪 **Comprehensive Testing**: Unit, integration, and component tests
 
 ## How can I edit this code?
 
@@ -48,6 +60,112 @@ npm run dev
 - Click on the "Code" button (green button) near the top right.
 - Select the "Codespaces" tab.
 - Click on "New codespace" to launch a new Codespace environment.
+
+## Azure Setup
+
+This portal integrates with your Azure tenant for resource monitoring and management. Follow these steps:
+
+1. **Set up Azure App Registration** - See [AZURE_SETUP.md](./AZURE_SETUP.md) for detailed instructions
+2. **Configure Environment Variables** - Copy `.env.example` to `.env.local` and fill in your Azure credentials
+3. **Deploy Supabase Edge Functions** - Configure Azure credentials in Supabase secrets
+
+For complete setup instructions, see [AZURE_SETUP.md](./AZURE_SETUP.md)
+
+## Testing
+
+This project includes comprehensive testing with Vitest and React Testing Library.
+
+```bash
+# Run tests in watch mode
+npm test
+
+# Run tests once
+npm run test:run
+
+# Run with UI
+npm run test:ui
+
+# Generate coverage report
+npm run test:coverage
+
+# Run specific test suites
+npm run test:unit        # Unit tests only
+npm run test:integration # Integration tests only
+```
+
+For testing guidelines and best practices, see [TESTING.md](./TESTING.md)
+
+## Documentation
+
+- **[AZURE_SETUP.md](./AZURE_SETUP.md)** - Complete Azure tenant integration guide
+- **[TESTING.md](./TESTING.md)** - Testing framework documentation and best practices
+- **[IMPLEMENTATION_SUMMARY.md](./IMPLEMENTATION_SUMMARY.md)** - Details of testing framework and Azure enhancements
+
+## Project Structure
+
+```
+src/
+├── components/        # React components
+│   ├── auth/         # Authentication components
+│   ├── dashboard/    # Dashboard components
+│   ├── layout/       # Layout components
+│   └── ui/           # Reusable UI components
+├── hooks/            # Custom React hooks
+│   ├── useAuth.tsx   # Authentication hook
+│   └── useAzureMonitor.ts # Azure Monitor integration
+├── lib/              # Utility libraries
+│   ├── azureAuth.ts  # Azure authentication utilities
+│   └── utils.ts      # General utilities
+├── pages/            # Page components
+├── test/             # Test utilities and integration tests
+│   ├── setup.ts      # Test configuration
+│   ├── testUtils.tsx # Custom render functions
+│   └── integration/  # Integration tests
+└── integrations/     # External service integrations
+    ├── backend/      # Supabase client
+    └── supabase/     # Supabase types
+```
+
+## Available Scripts
+
+```bash
+npm run dev          # Start development server
+npm run build        # Build for production
+npm run preview      # Preview production build
+npm run lint         # Run ESLint
+npm test            # Run tests in watch mode
+npm run test:coverage # Generate test coverage report
+```
+
+## Tech Stack
+
+- **Frontend**: React 18, TypeScript, Vite
+- **UI**: Tailwind CSS, Radix UI, shadcn/ui
+- **Backend**: Supabase (PostgreSQL, Edge Functions)
+- **Azure**: Azure Monitor, Azure AD, Azure Resource Manager
+- **Testing**: Vitest, React Testing Library, jsdom
+- **State Management**: React Query (TanStack Query)
+- **Routing**: React Router v6
+
+## Contributing
+
+1. Create a feature branch
+2. Write tests for new features
+3. Ensure all tests pass: `npm run test:run`
+4. Ensure linting passes: `npm run lint`
+5. Submit a pull request
+
+## CI/CD
+
+The project includes a GitHub Actions workflow that:
+- Runs linting checks
+- Executes all tests
+- Generates coverage reports
+- Builds the application
+- Performs security scanning
+- Type checks with TypeScript
+
+See `.github/workflows/ci.yml` for details.
 - Edit files directly within the Codespace and commit and push your changes once you're done.
 
 ## What technologies are used for this project?

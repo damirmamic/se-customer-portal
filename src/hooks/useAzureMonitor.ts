@@ -60,35 +60,67 @@ export function useAzureMonitor() {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const callAzureMonitor = useCallback(async (action: string, params: Record<string, any> = {}) => {
-    const { data, error } = await supabase.functions.invoke('azure-monitor', {
-      body: { action, ...params },
-    });
+  const callAzureMonitor = useCallback(async (action: string, params: Record<string, any> = {}, retries = 3) => {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const { data, error } = await supabase.functions.invoke('azure-monitor', {
+          body: { action, ...params },
+        });
 
-    if (error) {
-      // supabase-js attaches response details on error.context
-      const context = (error as any)?.context;
-      const body = context?.body;
-
-      let message = error.message || 'Failed to call Azure Monitor';
-      if (body) {
-        try {
-          const parsed = typeof body === 'string' ? JSON.parse(body) : body;
-          if (parsed?.error) message = parsed.error;
-        } catch {
-          // ignore JSON parsing issues
+        if (error) {
+          console.error(`Azure Monitor error (attempt ${attempt + 1}/${retries}):`, error);
+          lastError = new Error(error.message || 'Failed to call Azure Monitor');
+          
+          // If it's a credentials error, don't retry
+          if (error.message?.includes('credentials') || error.message?.includes('unauthorized')) {
+            throw lastError;
+          }
+          
+          // Wait before retry (exponential backoff)
+          if (attempt < retries - 1) {
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+            continue;
+          }
+          throw lastError;
         }
+
+        if (data?.error) {
+          lastError = new Error(data.error);
+          
+          // Don't retry for configuration errors
+          if (data.error.includes('not configured') || data.error.includes('credentials')) {
+            throw lastError;
+          }
+          
+          if (attempt < retries - 1) {
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+            continue;
+          }
+          throw lastError;
+        }
+
+        return data;
+      } catch (err) {
+        if (err instanceof Error && (
+          err.message.includes('credentials') || 
+          err.message.includes('not configured') ||
+          err.message.includes('unauthorized')
+        )) {
+          throw err; // Don't retry config errors
+        }
+        
+        lastError = err instanceof Error ? err : new Error('Unknown error');
+        if (attempt === retries - 1) {
+          throw lastError;
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
       }
-
-      console.error('Azure Monitor error:', { message, status: context?.status, error });
-      throw new Error(message);
     }
-
-    if (data?.error) {
-      throw new Error(data.error);
-    }
-
-    return data;
+    
+    throw lastError || new Error('Failed to call Azure Monitor after retries');
   }, []);
 
   const fetchSubscriptions = useCallback(async () => {
@@ -195,14 +227,14 @@ export function useAzureMonitor() {
   // Auto-fetch subscriptions on mount
   useEffect(() => {
     fetchSubscriptions();
-  }, []);
+  }, [fetchSubscriptions]);
 
   // Fetch resources when subscription changes
   useEffect(() => {
     if (selectedSubscription) {
       refresh();
     }
-  }, [selectedSubscription]);
+  }, [selectedSubscription, refresh]);
 
   return {
     subscriptions,
