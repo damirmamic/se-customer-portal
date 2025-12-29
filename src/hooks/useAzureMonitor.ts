@@ -66,8 +66,22 @@ export function useAzureMonitor() {
     });
 
     if (error) {
-      console.error('Azure Monitor error:', error);
-      throw new Error(error.message || 'Failed to call Azure Monitor');
+      // supabase-js attaches response details on error.context
+      const context = (error as any)?.context;
+      const body = context?.body;
+
+      let message = error.message || 'Failed to call Azure Monitor';
+      if (body) {
+        try {
+          const parsed = typeof body === 'string' ? JSON.parse(body) : body;
+          if (parsed?.error) message = parsed.error;
+        } catch {
+          // ignore JSON parsing issues
+        }
+      }
+
+      console.error('Azure Monitor error:', { message, status: context?.status, error });
+      throw new Error(message);
     }
 
     if (data?.error) {
