@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -42,15 +42,7 @@ export default function Auth() {
     }
   }, [user, navigate]);
 
-  // Handle OAuth callback
-  useEffect(() => {
-    const code = searchParams.get('code');
-    if (code && !processingCallback) {
-      handleEntraCallback(code);
-    }
-  }, [searchParams]);
-
-  const handleEntraCallback = async (code: string) => {
+  const handleEntraCallback = useCallback(async (code: string) => {
     setProcessingCallback(true);
     try {
       const redirectUri = `${window.location.origin}/auth`;
@@ -98,7 +90,15 @@ export default function Auth() {
     } finally {
       setProcessingCallback(false);
     }
-  };
+  }, [navigate, toast]);
+
+  // Handle OAuth callback
+  useEffect(() => {
+    const code = searchParams.get('code');
+    if (code && !processingCallback) {
+      handleEntraCallback(code);
+    }
+  }, [searchParams, processingCallback, handleEntraCallback]);
 
   const handleEntraLogin = async () => {
     setLoading(true);

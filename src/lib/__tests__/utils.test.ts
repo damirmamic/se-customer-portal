@@ -9,6 +9,7 @@ describe('utils', () => {
     });
 
     it('should handle conditional classes', () => {
+      // eslint-disable-next-line no-constant-binary-expression
       const result = cn('base', false && 'conditional', true && 'included');
       expect(result).not.toContain('conditional');
       expect(result).toContain('included');

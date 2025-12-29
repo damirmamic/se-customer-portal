@@ -146,7 +146,7 @@ export class AzureAuthError extends Error {
   constructor(
     public type: AzureAuthErrorType,
     message: string,
-    public details?: any
+    public details?: unknown
   ) {
     super(message);
     this.name = 'AzureAuthError';
@@ -156,6 +156,7 @@ export class AzureAuthError extends Error {
 /**
  * Parse error from Azure AD response
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function parseAzureError(error: any): AzureAuthError {
   if (error?.error === 'access_denied') {
     return new AzureAuthError(

@@ -242,7 +242,7 @@ serve(async (req) => {
       // Try to get existing user
       const { data: existingUsers } = await supabase.auth.admin.listUsers();
       let userId: string;
-      let existingUser = existingUsers?.users?.find(u => u.email === email);
+      const existingUser = existingUsers?.users?.find(u => u.email === email);
 
       // Capture old roles for audit logging
       let oldRoles: { role: string }[] = [];

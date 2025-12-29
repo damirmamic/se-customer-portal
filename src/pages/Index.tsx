@@ -187,8 +187,8 @@ const Index = () => {
                     <ResourceCard
                       key={resource.name}
                       name={resource.name}
-                      type={resource.type as any}
-                      status={resource.status as any}
+                      type={resource.type}
+                      status={resource.status}
                       region={resource.region}
                       uptime={typeof resource.uptime === 'number' ? resource.uptime : 99.9}
                       cpu={resource.cpu}

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@/test/testUtils';
 import { ProtectedRoute } from '../ProtectedRoute';
 import { useAuth } from '@/hooks/useAuth';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { User, Session } from '@supabase/supabase-js';
 
 // Mock useAuth hook
 vi.mock('@/hooks/useAuth', () => ({
@@ -28,8 +28,8 @@ describe('ProtectedRoute Component', () => {
 
   it('should render children when user is authenticated', () => {
     vi.mocked(useAuth).mockReturnValue({
-      user: { id: 'user-1', email: 'test@example.com' } as any,
-      session: {} as any,
+      user: { id: 'user-1', email: 'test@example.com' } as unknown as User,
+      session: {} as unknown as Session,
       roles: ['customer'],
       loading: false,
       signOut: vi.fn(),
@@ -98,8 +98,8 @@ describe('ProtectedRoute Component', () => {
     const hasRoleMock = vi.fn((role: string) => role === 'customer');
     
     vi.mocked(useAuth).mockReturnValue({
-      user: { id: 'user-1', email: 'test@example.com' } as any,
-      session: {} as any,
+      user: { id: 'user-1', email: 'test@example.com' } as unknown as User,
+      session: {} as unknown as Session,
       roles: ['customer'],
       loading: false,
       signOut: vi.fn(),
@@ -123,8 +123,8 @@ describe('ProtectedRoute Component', () => {
     const hasRoleMock = vi.fn(() => false);
     
     vi.mocked(useAuth).mockReturnValue({
-      user: { id: 'user-1', email: 'test@example.com' } as any,
-      session: {} as any,
+      user: { id: 'user-1', email: 'test@example.com' } as unknown as User,
+      session: {} as unknown as Session,
       roles: ['customer'],
       loading: false,
       signOut: vi.fn(),
@@ -152,8 +152,8 @@ describe('ProtectedRoute Component', () => {
     );
     
     vi.mocked(useAuth).mockReturnValue({
-      user: { id: 'user-1', email: 'test@example.com' } as any,
-      session: {} as any,
+      user: { id: 'user-1', email: 'test@example.com' } as unknown as User,
+      session: {} as unknown as Session,
       roles: ['operations_engineer'],
       loading: false,
       signOut: vi.fn(),

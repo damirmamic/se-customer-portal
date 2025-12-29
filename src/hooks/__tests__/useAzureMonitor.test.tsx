@@ -106,7 +106,7 @@ describe('useAzureMonitor', () => {
       { id: 'res1', name: 'Resource 1', type: 'vm' },
     ];
 
-    vi.mocked(supabase.functions.invoke).mockImplementation(async (functionName, options: any) => {
+    vi.mocked(supabase.functions.invoke).mockImplementation(async (functionName, options: { body?: { action?: string } } | undefined) => {
         const body = options?.body;
         if (body?.action === 'list-subscriptions') {
             return { data: { subscriptions: mockSubscriptions }, error: null };

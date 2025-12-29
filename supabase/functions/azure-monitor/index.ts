@@ -249,7 +249,7 @@ async function getAzureToken(scope: string): Promise<string> {
 }
 
 // List Azure subscriptions
-async function listSubscriptions(token: string): Promise<any[]> {
+async function listSubscriptions(token: string): Promise<unknown[]> {
   const response = await fetch(
     'https://management.azure.com/subscriptions?api-version=2022-12-01',
     {
@@ -441,7 +441,7 @@ async function queryLogAnalytics(
   token: string,
   workspaceId: string,
   query: string
-): Promise<any> {
+): Promise<unknown> {
   const response = await fetch(
     `https://api.loganalytics.io/v1/workspaces/${workspaceId}/query`,
     {

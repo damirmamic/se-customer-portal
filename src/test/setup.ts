@@ -34,6 +34,7 @@ global.IntersectionObserver = class IntersectionObserver {
     return [];
   }
   unobserve() {}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any;
 
 // Mock ResizeObserver
@@ -42,6 +43,7 @@ global.ResizeObserver = class ResizeObserver {
   disconnect() {}
   observe() {}
   unobserve() {}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 } as any;
 
 // Mock localStorage
@@ -51,4 +53,5 @@ const localStorageMock = {
   removeItem: vi.fn(),
   clear: vi.fn(),
 };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 global.localStorage = localStorageMock as any;

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { AuthProvider, useAuth } from '../useAuth';
 import { supabase } from '@/integrations/backend/client';
+import { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 
 // Mock Supabase
 vi.mock('@/integrations/backend/client', () => ({
@@ -71,7 +72,7 @@ describe('useAuth', () => {
     };
 
     vi.mocked(supabase.auth.getSession).mockResolvedValue({
-      data: { session: mockSession as any },
+      data: { session: mockSession as unknown as Session },
       error: null,
     });
 
@@ -82,7 +83,7 @@ describe('useAuth', () => {
           error: null,
         })),
       })),
-    } as any);
+    } as unknown as ReturnType<typeof supabase.from>);
 
     const { result } = renderHook(() => useAuth(), { wrapper });
 
@@ -106,11 +107,11 @@ describe('useAuth', () => {
           error: null,
         })),
       })),
-    } as any);
+    } as unknown as ReturnType<typeof supabase.from>);
 
-    const mockUser = { id: 'user-123', email: 'test@example.com' } as any;
+    const mockUser = { id: 'user-123', email: 'test@example.com' } as unknown as User;
     vi.mocked(supabase.auth.getSession).mockResolvedValue({
-      data: { session: { user: mockUser } as any },
+      data: { session: { user: mockUser } as unknown as Session },
       error: null,
     });
 
@@ -145,7 +146,7 @@ describe('useAuth', () => {
   });
 
   it('should update roles when user changes', async () => {
-    let authCallback: Function | null = null;
+    let authCallback: ((event: AuthChangeEvent, session: Session | null) => void) | null = null;
 
     vi.mocked(supabase.auth.onAuthStateChange).mockImplementation((callback) => {
       authCallback = callback;
@@ -167,7 +168,7 @@ describe('useAuth', () => {
     });
 
     // Simulate auth state change
-    const newUser = { id: 'new-user', email: 'new@example.com' } as any;
+    const newUser = { id: 'new-user', email: 'new@example.com' } as unknown as User;
     vi.mocked(supabase.from).mockReturnValue({
       select: vi.fn(() => ({
         eq: vi.fn(() => ({
@@ -175,7 +176,7 @@ describe('useAuth', () => {
           error: null,
         })),
       })),
-    } as any);
+    } as unknown as ReturnType<typeof supabase.from>);
 
     if (authCallback) {
       await act(async () => {

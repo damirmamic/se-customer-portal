@@ -46,7 +46,7 @@ export interface LogQueryResult {
   tables: Array<{
     name: string;
     columns: Array<{ name: string; type: string }>;
-    rows: any[][];
+    rows: unknown[][];
   }>;
 }
 
@@ -60,7 +60,7 @@ export function useAzureMonitor() {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const callAzureMonitor = useCallback(async (action: string, params: Record<string, any> = {}, retries = 3) => {
+  const callAzureMonitor = useCallback(async (action: string, params: Record<string, unknown> = {}, retries = 3) => {
     let lastError: Error | null = null;
     
     for (let attempt = 0; attempt < retries; attempt++) {
