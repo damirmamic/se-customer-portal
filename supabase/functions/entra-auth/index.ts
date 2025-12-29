@@ -218,17 +218,16 @@ serve(async (req) => {
       }
 
       // Determine roles based on group membership - ONLY use server-side mapping
-      const roles: ('customer' | 'operations_engineer' | 'admin')[] = [];
+      const mappedRoles: ('customer' | 'operations_engineer' | 'admin')[] = [];
       for (const [groupId, role] of Object.entries(GROUP_ROLE_MAPPING)) {
         if (userGroups.includes(groupId)) {
-          roles.push(role as 'customer' | 'operations_engineer' | 'admin');
+          mappedRoles.push(role as 'customer' | 'operations_engineer' | 'admin');
         }
       }
-      // Default to customer if no matching groups
-      if (roles.length === 0) {
-        roles.push('customer');
-      }
-      console.log('Assigned roles:', roles);
+      console.log('Mapped roles from groups:', mappedRoles);
+
+      // NOTE: final roles are decided after we load any existing roles from the database
+      // to avoid downgrading users when there are no Entra group mappings
 
       // Create or update user in Supabase
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
