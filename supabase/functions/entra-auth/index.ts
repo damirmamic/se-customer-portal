@@ -1,6 +1,41 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// ========== Rate Limiting ==========
+// In-memory rate limiting (resets on cold start, but provides protection during hot execution)
+const requestCounts = new Map<string, { count: number; resetAt: number }>();
+
+const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute window
+const RATE_LIMIT_MAX_REQUESTS = 10; // Max 10 requests per minute per IP
+
+function checkRateLimit(ip: string): { allowed: boolean; remaining: number; resetAt: number } {
+  const now = Date.now();
+  const record = requestCounts.get(ip);
+  
+  // Clean up expired entries periodically
+  if (requestCounts.size > 1000) {
+    for (const [key, value] of requestCounts.entries()) {
+      if (value.resetAt < now) {
+        requestCounts.delete(key);
+      }
+    }
+  }
+  
+  if (!record || record.resetAt < now) {
+    // New window
+    const resetAt = now + RATE_LIMIT_WINDOW_MS;
+    requestCounts.set(ip, { count: 1, resetAt });
+    return { allowed: true, remaining: RATE_LIMIT_MAX_REQUESTS - 1, resetAt };
+  }
+  
+  if (record.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return { allowed: false, remaining: 0, resetAt: record.resetAt };
+  }
+  
+  record.count++;
+  return { allowed: true, remaining: RATE_LIMIT_MAX_REQUESTS - record.count, resetAt: record.resetAt };
+}
+
 // ========== CORS Configuration ==========
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
@@ -32,6 +67,21 @@ function getCorsHeaders(req: Request): Record<string, string> {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Credentials': 'true',
   };
+}
+
+// ========== Request Logging ==========
+function logAuthRequest(req: Request, action: string, success: boolean, details?: string): void {
+  const logEntry = {
+    type: 'AUTH_REQUEST',
+    action,
+    success,
+    ip: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown',
+    origin: req.headers.get('origin') || 'unknown',
+    userAgent: req.headers.get('user-agent')?.substring(0, 100) || 'unknown',
+    timestamp: new Date().toISOString(),
+    details: details || undefined,
+  };
+  console.log(JSON.stringify(logEntry));
 }
 
 // Entra ID group to role mapping - configure these to match your Entra ID groups
@@ -69,6 +119,29 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Apply rate limiting
+  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
+                   req.headers.get('x-real-ip') || 
+                   'unknown';
+  const rateLimitResult = checkRateLimit(clientIp);
+  
+  if (!rateLimitResult.allowed) {
+    logAuthRequest(req, 'rate_limited', false, `IP: ${clientIp}`);
+    return new Response(
+      JSON.stringify({ error: 'Too many requests. Please try again later.' }),
+      { 
+        status: 429, 
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json',
+          'Retry-After': String(Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000)),
+          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Reset': String(Math.floor(rateLimitResult.resetAt / 1000)),
+        } 
+      }
+    );
+  }
+
   try {
     const { action, code, redirectUri, codeChallenge, codeVerifier } = await req.json();
 
@@ -95,6 +168,7 @@ serve(async (req) => {
     if (action === 'get-auth-url') {
       // Generate authorization URL for Entra ID with PKCE
       if (!redirectUri || !codeChallenge) {
+        logAuthRequest(req, 'get-auth-url', false, 'Missing required parameters');
         return new Response(
           JSON.stringify({ error: 'Missing required parameters' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -104,7 +178,7 @@ serve(async (req) => {
       // Validate redirect URI against allowed origins
       const redirectOrigin = new URL(redirectUri).origin;
       if (!isAllowedOrigin(redirectOrigin)) {
-        console.error('Invalid redirect URI origin:', redirectOrigin);
+        logAuthRequest(req, 'get-auth-url', false, `Invalid redirect URI origin: ${redirectOrigin}`);
         return new Response(
           JSON.stringify({ error: 'Invalid redirect URI' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -122,7 +196,7 @@ serve(async (req) => {
         `code_challenge=${encodeURIComponent(codeChallenge)}&` +
         `code_challenge_method=S256`;
 
-      console.log('Generated auth URL for redirect:', redirectUri);
+      logAuthRequest(req, 'get-auth-url', true, `Redirect: ${redirectUri}`);
 
       return new Response(
         JSON.stringify({ authUrl }),
@@ -346,6 +420,8 @@ serve(async (req) => {
         );
       }
 
+      logAuthRequest(req, 'exchange-code', true, `User: ${email}`);
+
       return new Response(
         JSON.stringify({
           user: {
@@ -360,6 +436,7 @@ serve(async (req) => {
       );
     }
 
+    logAuthRequest(req, action || 'unknown', false, 'Invalid action');
     return new Response(
       JSON.stringify({ error: 'Invalid action' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -367,6 +444,7 @@ serve(async (req) => {
 
   } catch (error) {
     const corsHeaders = getCorsHeaders(req);
+    logAuthRequest(req, 'error', false, error instanceof Error ? error.message : 'Unknown error');
     console.error('Error in entra-auth function:', error);
     // Return generic error to client, log details server-side
     return new Response(
