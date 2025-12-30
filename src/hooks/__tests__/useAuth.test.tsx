@@ -180,7 +180,13 @@ describe('useAuth', () => {
 
     if (authCallback) {
       await act(async () => {
-        authCallback('SIGNED_IN', { user: newUser, access_token: 'token' });
+        authCallback('SIGNED_IN', { 
+          user: newUser, 
+          access_token: 'token',
+          refresh_token: 'refresh_token',
+          expires_in: 3600,
+          token_type: 'bearer'
+        } as Session);
       });
     }
 
