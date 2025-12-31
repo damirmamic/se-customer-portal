@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/backend/client";
 import { User, Mail, Building2, Phone, MapPin, Shield, Clock, Save, Camera, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
