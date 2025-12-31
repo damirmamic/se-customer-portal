@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -24,14 +26,85 @@ import {
   Smartphone,
   Moon,
   Sun,
-  Save
+  Save,
+  Loader2
 } from "lucide-react";
-import { toast } from "sonner";
+import { useSettings, UserSettingsUpdate } from "@/hooks/useSettings";
 
 const Settings = () => {
+  const { 
+    userSettings, 
+    orgSettings, 
+    isLoading, 
+    updateUserSettings, 
+    updateOrgSettings,
+    isSaving 
+  } = useSettings();
+
+  // Local state for form values
+  const [localSettings, setLocalSettings] = useState<UserSettingsUpdate>({});
+  const [orgName, setOrgName] = useState("");
+  const [orgSlug, setOrgSlug] = useState("");
+
+  // Sync local state with fetched data
+  useEffect(() => {
+    if (userSettings) {
+      setLocalSettings({
+        email_notifications: userSettings.email_notifications,
+        push_notifications: userSettings.push_notifications,
+        critical_alerts_only: userSettings.critical_alerts_only,
+        theme: userSettings.theme,
+        compact_mode: userSettings.compact_mode,
+        animations_enabled: userSettings.animations_enabled,
+        timezone: userSettings.timezone,
+        language: userSettings.language,
+        alert_incident_created: userSettings.alert_incident_created,
+        alert_incident_resolved: userSettings.alert_incident_resolved,
+        alert_resource_down: userSettings.alert_resource_down,
+        alert_sla_breach: userSettings.alert_sla_breach,
+        alert_backup_failed: userSettings.alert_backup_failed,
+        alert_security: userSettings.alert_security,
+        data_retention_days: userSettings.data_retention_days,
+        usage_analytics: userSettings.usage_analytics,
+      });
+    }
+  }, [userSettings]);
+
+  useEffect(() => {
+    if (orgSettings) {
+      setOrgName(orgSettings.org_name);
+      setOrgSlug(orgSettings.org_slug || "");
+    }
+  }, [orgSettings]);
+
   const handleSave = () => {
-    toast.success("Settings saved successfully");
+    updateUserSettings(localSettings);
+    if (orgName || orgSlug) {
+      updateOrgSettings({ org_name: orgName, org_slug: orgSlug || null });
+    }
   };
+
+  const updateSetting = <K extends keyof UserSettingsUpdate>(key: K, value: UserSettingsUpdate[K]) => {
+    setLocalSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  if (isLoading) {
+    return (
+      <MainLayout>
+        <div className="space-y-6 animate-fade-in">
+          <div className="flex items-center justify-between">
+            <div>
+              <Skeleton className="h-8 w-32 mb-2" />
+              <Skeleton className="h-4 w-64" />
+            </div>
+            <Skeleton className="h-10 w-32" />
+          </div>
+          <Skeleton className="h-12 w-96" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
@@ -42,8 +115,12 @@ const Settings = () => {
             <h1 className="text-2xl font-bold text-foreground">Settings</h1>
             <p className="text-muted-foreground">Manage your account and application preferences</p>
           </div>
-          <Button onClick={handleSave}>
-            <Save className="w-4 h-4 mr-2" />
+          <Button onClick={handleSave} disabled={isSaving}>
+            {isSaving ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4 mr-2" />
+            )}
             Save Changes
           </Button>
         </div>
@@ -70,7 +147,12 @@ const Settings = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <Label htmlFor="orgName">Organization Name</Label>
-                    <Input id="orgName" defaultValue="CloudOps Inc." />
+                    <Input 
+                      id="orgName" 
+                      value={orgName}
+                      onChange={(e) => setOrgName(e.target.value)}
+                      placeholder="My Organization"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="orgSlug">Organization URL</Label>
@@ -78,26 +160,38 @@ const Settings = () => {
                       <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm text-muted-foreground">
                         cloudops.app/
                       </span>
-                      <Input id="orgSlug" defaultValue="cloudops-inc" className="rounded-l-none" />
+                      <Input 
+                        id="orgSlug" 
+                        value={orgSlug}
+                        onChange={(e) => setOrgSlug(e.target.value)}
+                        className="rounded-l-none" 
+                        placeholder="my-org"
+                      />
                     </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="timezone">Timezone</Label>
-                    <Select defaultValue="utc">
+                    <Select 
+                      value={localSettings.timezone || "UTC"} 
+                      onValueChange={(value) => updateSetting("timezone", value)}
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="utc">UTC (Coordinated Universal Time)</SelectItem>
-                        <SelectItem value="est">EST (Eastern Standard Time)</SelectItem>
-                        <SelectItem value="pst">PST (Pacific Standard Time)</SelectItem>
-                        <SelectItem value="cet">CET (Central European Time)</SelectItem>
+                        <SelectItem value="UTC">UTC (Coordinated Universal Time)</SelectItem>
+                        <SelectItem value="EST">EST (Eastern Standard Time)</SelectItem>
+                        <SelectItem value="PST">PST (Pacific Standard Time)</SelectItem>
+                        <SelectItem value="CET">CET (Central European Time)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="language">Language</Label>
-                    <Select defaultValue="en">
+                    <Select 
+                      value={localSettings.language || "en"} 
+                      onValueChange={(value) => updateSetting("language", value)}
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -125,9 +219,12 @@ const Settings = () => {
                 <div className="flex items-center justify-between py-3">
                   <div>
                     <p className="font-medium text-foreground">Data Retention</p>
-                    <p className="text-sm text-muted-foreground">Keep logs and analytics data for 90 days</p>
+                    <p className="text-sm text-muted-foreground">Keep logs and analytics data</p>
                   </div>
-                  <Select defaultValue="90">
+                  <Select 
+                    value={String(localSettings.data_retention_days || 90)} 
+                    onValueChange={(value) => updateSetting("data_retention_days", parseInt(value))}
+                  >
                     <SelectTrigger className="w-32">
                       <SelectValue />
                     </SelectTrigger>
@@ -145,7 +242,10 @@ const Settings = () => {
                     <p className="font-medium text-foreground">Usage Analytics</p>
                     <p className="text-sm text-muted-foreground">Help improve the product with anonymous usage data</p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch 
+                    checked={localSettings.usage_analytics ?? true}
+                    onCheckedChange={(checked) => updateSetting("usage_analytics", checked)}
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -170,7 +270,10 @@ const Settings = () => {
                       <p className="text-sm text-muted-foreground">Receive alerts via email</p>
                     </div>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch 
+                    checked={localSettings.email_notifications ?? true}
+                    onCheckedChange={(checked) => updateSetting("email_notifications", checked)}
+                  />
                 </div>
                 <Separator />
                 <div className="flex items-center justify-between py-3">
@@ -181,7 +284,10 @@ const Settings = () => {
                       <p className="text-sm text-muted-foreground">Receive push notifications on mobile</p>
                     </div>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch 
+                    checked={localSettings.push_notifications ?? true}
+                    onCheckedChange={(checked) => updateSetting("push_notifications", checked)}
+                  />
                 </div>
                 <Separator />
                 <div className="flex items-center justify-between py-3">
@@ -192,7 +298,10 @@ const Settings = () => {
                       <p className="text-sm text-muted-foreground">Only notify for critical incidents</p>
                     </div>
                   </div>
-                  <Switch />
+                  <Switch 
+                    checked={localSettings.critical_alerts_only ?? false}
+                    onCheckedChange={(checked) => updateSetting("critical_alerts_only", checked)}
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -204,19 +313,22 @@ const Settings = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 {[
-                  { name: "Incident Created", description: "When a new incident is reported", enabled: true },
-                  { name: "Incident Resolved", description: "When an incident is marked resolved", enabled: true },
-                  { name: "Resource Down", description: "When a resource becomes unavailable", enabled: true },
-                  { name: "SLA Breach", description: "When SLA thresholds are exceeded", enabled: true },
-                  { name: "Backup Failed", description: "When a backup job fails", enabled: true },
-                  { name: "Security Alert", description: "When suspicious activity is detected", enabled: true },
-                ].map((alert, index) => (
-                  <div key={index} className="flex items-center justify-between py-2">
+                  { key: "alert_incident_created" as const, name: "Incident Created", description: "When a new incident is reported" },
+                  { key: "alert_incident_resolved" as const, name: "Incident Resolved", description: "When an incident is marked resolved" },
+                  { key: "alert_resource_down" as const, name: "Resource Down", description: "When a resource becomes unavailable" },
+                  { key: "alert_sla_breach" as const, name: "SLA Breach", description: "When SLA thresholds are exceeded" },
+                  { key: "alert_backup_failed" as const, name: "Backup Failed", description: "When a backup job fails" },
+                  { key: "alert_security" as const, name: "Security Alert", description: "When suspicious activity is detected" },
+                ].map((alert) => (
+                  <div key={alert.key} className="flex items-center justify-between py-2">
                     <div>
                       <p className="font-medium text-foreground">{alert.name}</p>
                       <p className="text-sm text-muted-foreground">{alert.description}</p>
                     </div>
-                    <Switch defaultChecked={alert.enabled} />
+                    <Switch 
+                      checked={localSettings[alert.key] ?? true}
+                      onCheckedChange={(checked) => updateSetting(alert.key, checked)}
+                    />
                   </div>
                 ))}
               </CardContent>
@@ -237,16 +349,25 @@ const Settings = () => {
                 <div className="space-y-4">
                   <Label>Color Theme</Label>
                   <div className="grid grid-cols-3 gap-4">
-                    <div className="cursor-pointer p-4 rounded-lg border-2 border-primary bg-muted/50 text-center">
-                      <Moon className="w-6 h-6 mx-auto mb-2 text-primary" />
+                    <div 
+                      className={`cursor-pointer p-4 rounded-lg border-2 ${localSettings.theme === "dark" ? "border-primary bg-muted/50" : "border-border hover:border-primary/50 bg-muted/30"} text-center`}
+                      onClick={() => updateSetting("theme", "dark")}
+                    >
+                      <Moon className={`w-6 h-6 mx-auto mb-2 ${localSettings.theme === "dark" ? "text-primary" : "text-muted-foreground"}`} />
                       <span className="text-sm font-medium text-foreground">Dark</span>
                     </div>
-                    <div className="cursor-pointer p-4 rounded-lg border border-border hover:border-primary/50 bg-muted/30 text-center">
-                      <Sun className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
+                    <div 
+                      className={`cursor-pointer p-4 rounded-lg border-2 ${localSettings.theme === "light" ? "border-primary bg-muted/50" : "border-border hover:border-primary/50 bg-muted/30"} text-center`}
+                      onClick={() => updateSetting("theme", "light")}
+                    >
+                      <Sun className={`w-6 h-6 mx-auto mb-2 ${localSettings.theme === "light" ? "text-primary" : "text-muted-foreground"}`} />
                       <span className="text-sm font-medium text-foreground">Light</span>
                     </div>
-                    <div className="cursor-pointer p-4 rounded-lg border border-border hover:border-primary/50 bg-muted/30 text-center">
-                      <SettingsIcon className="w-6 h-6 mx-auto mb-2 text-muted-foreground" />
+                    <div 
+                      className={`cursor-pointer p-4 rounded-lg border-2 ${localSettings.theme === "system" ? "border-primary bg-muted/50" : "border-border hover:border-primary/50 bg-muted/30"} text-center`}
+                      onClick={() => updateSetting("theme", "system")}
+                    >
+                      <SettingsIcon className={`w-6 h-6 mx-auto mb-2 ${localSettings.theme === "system" ? "text-primary" : "text-muted-foreground"}`} />
                       <span className="text-sm font-medium text-foreground">System</span>
                     </div>
                   </div>
@@ -259,7 +380,10 @@ const Settings = () => {
                     <p className="font-medium text-foreground">Compact Mode</p>
                     <p className="text-sm text-muted-foreground">Reduce spacing for more content</p>
                   </div>
-                  <Switch />
+                  <Switch 
+                    checked={localSettings.compact_mode ?? false}
+                    onCheckedChange={(checked) => updateSetting("compact_mode", checked)}
+                  />
                 </div>
 
                 <div className="flex items-center justify-between py-3">
@@ -267,7 +391,10 @@ const Settings = () => {
                     <p className="font-medium text-foreground">Animations</p>
                     <p className="text-sm text-muted-foreground">Enable UI animations and transitions</p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch 
+                    checked={localSettings.animations_enabled ?? true}
+                    onCheckedChange={(checked) => updateSetting("animations_enabled", checked)}
+                  />
                 </div>
               </CardContent>
             </Card>

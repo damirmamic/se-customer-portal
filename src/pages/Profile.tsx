@@ -7,24 +7,45 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/useAuth";
-import { User, Mail, Building2, Phone, MapPin, Shield, Clock, Save, Camera } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { User, Mail, Building2, Phone, MapPin, Shield, Clock, Save, Camera, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 const Profile = () => {
   const { user, roles } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState({
     fullName: user?.user_metadata?.full_name || "",
-    email: user?.email || "",
     phone: user?.user_metadata?.phone || "",
-    company: user?.user_metadata?.company || "CloudOps Inc.",
-    department: user?.user_metadata?.department || "Engineering",
+    company: user?.user_metadata?.company || "",
+    department: user?.user_metadata?.department || "",
     location: user?.user_metadata?.location || "",
   });
 
-  const handleSave = () => {
-    toast.success("Profile updated successfully");
-    setIsEditing(false);
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: {
+          full_name: formData.fullName,
+          phone: formData.phone,
+          company: formData.company,
+          department: formData.department,
+          location: formData.location,
+        }
+      });
+
+      if (error) throw error;
+
+      toast.success("Profile updated successfully");
+      setIsEditing(false);
+    } catch (error) {
+      console.error("Failed to update profile:", error);
+      toast.error("Failed to update profile");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const displayName = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "User";
@@ -73,8 +94,14 @@ const Profile = () => {
                   <Button
                     variant={isEditing ? "default" : "outline"}
                     onClick={() => isEditing ? handleSave() : setIsEditing(true)}
+                    disabled={isSaving}
                   >
-                    {isEditing ? (
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : isEditing ? (
                       <>
                         <Save className="w-4 h-4 mr-2" />
                         Save Changes

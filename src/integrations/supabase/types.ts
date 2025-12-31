@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      organization_settings: {
+        Row: {
+          created_at: string
+          id: string
+          org_name: string
+          org_slug: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          org_name?: string
+          org_slug?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          org_name?: string
+          org_slug?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -37,6 +61,75 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_settings: {
+        Row: {
+          alert_backup_failed: boolean
+          alert_incident_created: boolean
+          alert_incident_resolved: boolean
+          alert_resource_down: boolean
+          alert_security: boolean
+          alert_sla_breach: boolean
+          animations_enabled: boolean
+          compact_mode: boolean
+          created_at: string
+          critical_alerts_only: boolean
+          data_retention_days: number
+          email_notifications: boolean
+          id: string
+          language: string
+          push_notifications: boolean
+          theme: string
+          timezone: string
+          updated_at: string
+          usage_analytics: boolean
+          user_id: string
+        }
+        Insert: {
+          alert_backup_failed?: boolean
+          alert_incident_created?: boolean
+          alert_incident_resolved?: boolean
+          alert_resource_down?: boolean
+          alert_security?: boolean
+          alert_sla_breach?: boolean
+          animations_enabled?: boolean
+          compact_mode?: boolean
+          created_at?: string
+          critical_alerts_only?: boolean
+          data_retention_days?: number
+          email_notifications?: boolean
+          id?: string
+          language?: string
+          push_notifications?: boolean
+          theme?: string
+          timezone?: string
+          updated_at?: string
+          usage_analytics?: boolean
+          user_id: string
+        }
+        Update: {
+          alert_backup_failed?: boolean
+          alert_incident_created?: boolean
+          alert_incident_resolved?: boolean
+          alert_resource_down?: boolean
+          alert_security?: boolean
+          alert_sla_breach?: boolean
+          animations_enabled?: boolean
+          compact_mode?: boolean
+          created_at?: string
+          critical_alerts_only?: boolean
+          data_retention_days?: number
+          email_notifications?: boolean
+          id?: string
+          language?: string
+          push_notifications?: boolean
+          theme?: string
+          timezone?: string
+          updated_at?: string
+          usage_analytics?: boolean
           user_id?: string
         }
         Relationships: []
