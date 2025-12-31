@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,25 +23,45 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { 
   Users, 
   UserPlus, 
   Mail, 
   Shield, 
   Search,
-  CheckCircle2
+  CheckCircle2,
+  Clock,
+  XCircle,
+  Loader2,
+  RefreshCw
 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/backend/client";
+import { useAuth } from "@/hooks/useAuth";
+
+type AppRole = "admin" | "operations_engineer" | "customer";
 
 interface TeamMember {
   id: string;
-  name: string;
-  email: string;
-  role: "admin" | "operations_engineer" | "customer";
-  status: "active" | "pending" | "inactive";
+  user_id: string;
+  role: AppRole;
+  email?: string;
+  name?: string;
+  created_at: string;
 }
 
-const getRoleBadge = (role: TeamMember["role"]) => {
+interface TeamInvitation {
+  id: string;
+  email: string;
+  name: string | null;
+  role: AppRole;
+  status: "pending" | "accepted" | "expired" | "cancelled";
+  created_at: string;
+  expires_at: string;
+}
+
+const getRoleBadge = (role: AppRole) => {
   const styles = {
     admin: "bg-destructive/20 text-destructive border-destructive/30",
     operations_engineer: "bg-warning/20 text-warning border-warning/30",
@@ -54,32 +75,175 @@ const getRoleBadge = (role: TeamMember["role"]) => {
   return <Badge className={styles[role]}>{labels[role]}</Badge>;
 };
 
+const getStatusBadge = (status: TeamInvitation["status"]) => {
+  const config = {
+    pending: { icon: Clock, className: "text-warning border-warning/30", label: "Pending" },
+    accepted: { icon: CheckCircle2, className: "text-success border-success/30", label: "Accepted" },
+    expired: { icon: XCircle, className: "text-muted-foreground border-muted", label: "Expired" },
+    cancelled: { icon: XCircle, className: "text-destructive border-destructive/30", label: "Cancelled" },
+  };
+  const { icon: Icon, className, label } = config[status];
+  return (
+    <Badge variant="outline" className={className}>
+      <Icon className="w-3 h-3 mr-1" />
+      {label}
+    </Badge>
+  );
+};
+
 const Team = () => {
-  const [members, setMembers] = useState<TeamMember[]>([]);
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteName, setInviteName] = useState("");
-  const [inviteRole, setInviteRole] = useState<"admin" | "operations_engineer" | "customer">("customer");
+  const [inviteRole, setInviteRole] = useState<AppRole>("customer");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Fetch team members (users with roles)
+  const { data: members = [], isLoading: membersLoading } = useQuery({
+    queryKey: ["teamMembers"],
+    queryFn: async (): Promise<TeamMember[]> => {
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select("id, user_id, role, created_at");
+      
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  // Fetch pending invitations
+  const { data: invitations = [], isLoading: invitationsLoading } = useQuery({
+    queryKey: ["teamInvitations"],
+    queryFn: async (): Promise<TeamInvitation[]> => {
+      const { data, error } = await supabase
+        .from("team_invitations")
+        .select("*")
+        .order("created_at", { ascending: false });
+      
+      if (error) throw error;
+      return (data || []).map((inv) => ({
+        ...inv,
+        status: inv.status as TeamInvitation["status"],
+      }));
+    },
+  });
+
+  // Send invitation mutation
+  const sendInvite = useMutation({
+    mutationFn: async ({ email, name, role }: { email: string; name?: string; role: AppRole }) => {
+      const { data, error } = await supabase.functions.invoke("send-team-invite", {
+        body: { email, name, role },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["teamInvitations"] });
+      if (data?.warning) {
+        toast.warning(`Invitation created, but email delivery failed. The user can still sign in.`);
+      } else {
+        toast.success(`Invitation sent to ${inviteEmail}`);
+      }
+      setShowInviteDialog(false);
+      setInviteEmail("");
+      setInviteName("");
+      setInviteRole("customer");
+    },
+    onError: (error) => {
+      console.error("Failed to send invitation:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to send invitation");
+    },
+  });
+
+  // Cancel invitation mutation
+  const cancelInvite = useMutation({
+    mutationFn: async (invitationId: string) => {
+      const { error } = await supabase
+        .from("team_invitations")
+        .update({ status: "cancelled" })
+        .eq("id", invitationId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["teamInvitations"] });
+      toast.success("Invitation cancelled");
+    },
+    onError: (error) => {
+      console.error("Failed to cancel invitation:", error);
+      toast.error("Failed to cancel invitation");
+    },
+  });
+
+  // Resend invitation mutation
+  const resendInvite = useMutation({
+    mutationFn: async (invitation: TeamInvitation) => {
+      // Cancel old invitation and create new one
+      await supabase
+        .from("team_invitations")
+        .update({ status: "cancelled" })
+        .eq("id", invitation.id);
+
+      const { data, error } = await supabase.functions.invoke("send-team-invite", {
+        body: { email: invitation.email, name: invitation.name, role: invitation.role },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["teamInvitations"] });
+      toast.success("Invitation resent");
+    },
+    onError: (error) => {
+      console.error("Failed to resend invitation:", error);
+      toast.error("Failed to resend invitation");
+    },
+  });
 
   const handleInvite = () => {
-    const newMember: TeamMember = {
-      id: Math.random().toString(36).substring(7),
-      name: inviteName || inviteEmail.split('@')[0],
-      email: inviteEmail,
-      role: inviteRole,
-      status: "pending",
-    };
-    setMembers([...members, newMember]);
-    toast.success(`Invitation sent to ${inviteEmail}`);
-    setShowInviteDialog(false);
-    setInviteEmail("");
-    setInviteName("");
-    setInviteRole("customer");
+    if (!inviteEmail) return;
+    sendInvite.mutate({ email: inviteEmail, name: inviteName || undefined, role: inviteRole });
   };
 
-  const activeMembers = members.filter((m) => m.status === "active").length;
+  const isLoading = membersLoading || invitationsLoading;
+  const activeMembers = members.length;
+  const pendingInvites = invitations.filter((i) => i.status === "pending").length;
   const admins = members.filter((m) => m.role === "admin").length;
   const engineers = members.filter((m) => m.role === "operations_engineer").length;
+
+  // Filter invitations by search
+  const filteredInvitations = invitations.filter((inv) =>
+    inv.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    inv.name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  if (isLoading) {
+    return (
+      <MainLayout>
+        <div className="space-y-6 animate-fade-in">
+          <div className="flex items-center justify-between">
+            <div>
+              <Skeleton className="h-8 w-24 mb-2" />
+              <Skeleton className="h-4 w-48" />
+            </div>
+            <Skeleton className="h-10 w-32" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-24" />
+            ))}
+          </div>
+          <Skeleton className="h-64" />
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
@@ -101,7 +265,7 @@ const Team = () => {
               <DialogHeader>
                 <DialogTitle>Invite Team Member</DialogTitle>
                 <DialogDescription>
-                  Send an invitation to join your team.
+                  Send an invitation email to join your team.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
@@ -126,7 +290,7 @@ const Team = () => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="role">Role</Label>
-                  <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as TeamMember["role"])}>
+                  <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as AppRole)}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -142,8 +306,15 @@ const Team = () => {
                 <Button variant="outline" onClick={() => setShowInviteDialog(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleInvite} disabled={!inviteEmail}>
-                  Send Invitation
+                <Button onClick={handleInvite} disabled={!inviteEmail || sendInvite.isPending}>
+                  {sendInvite.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    "Send Invitation"
+                  )}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -157,7 +328,7 @@ const Team = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Total Members</p>
-                  <p className="text-2xl font-bold text-foreground">{members.length}</p>
+                  <p className="text-2xl font-bold text-foreground">{activeMembers}</p>
                 </div>
                 <Users className="w-8 h-8 text-primary" />
               </div>
@@ -167,10 +338,10 @@ const Team = () => {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Active</p>
-                  <p className="text-2xl font-bold text-success">{activeMembers}</p>
+                  <p className="text-sm text-muted-foreground">Pending Invites</p>
+                  <p className="text-2xl font-bold text-warning">{pendingInvites}</p>
                 </div>
-                <CheckCircle2 className="w-8 h-8 text-success" />
+                <Clock className="w-8 h-8 text-warning" />
               </div>
             </CardContent>
           </Card>
@@ -203,16 +374,21 @@ const Team = () => {
           <CardContent className="py-4">
             <div className="relative max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input placeholder="Search team members..." className="pl-10" />
+              <Input 
+                placeholder="Search invitations..." 
+                className="pl-10"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
           </CardContent>
         </Card>
 
-        {/* Team Members List */}
+        {/* Active Team Members */}
         <Card className="glass-card">
           <CardHeader>
             <CardTitle>Team Members</CardTitle>
-            <CardDescription>All members with access to this organization</CardDescription>
+            <CardDescription>Active members with access to this organization</CardDescription>
           </CardHeader>
           <CardContent>
             {members.length === 0 ? (
@@ -233,29 +409,98 @@ const Team = () => {
                     <div className="flex items-center gap-4">
                       <Avatar className="h-10 w-10">
                         <AvatarFallback className="bg-primary/20 text-primary">
-                          {member.name
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")}
+                          {member.user_id.substring(0, 2).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="font-medium text-foreground">{member.name}</h3>
+                          <h3 className="font-medium text-foreground font-mono text-sm">
+                            {member.user_id === user?.id ? "You" : member.user_id.substring(0, 8)}
+                          </h3>
                           {getRoleBadge(member.role)}
-                          <Badge 
-                            variant="outline" 
-                            className={member.status === "active" ? "text-success border-success/30" : "text-warning border-warning/30"}
-                          >
-                            {member.status}
+                          <Badge variant="outline" className="text-success border-success/30">
+                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            Active
                           </Badge>
                         </div>
-                        <p className="text-sm text-muted-foreground flex items-center gap-1">
-                          <Mail className="w-3 h-3" />
-                          {member.email}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Joined {new Date(member.created_at).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Invitations */}
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle>Invitations</CardTitle>
+            <CardDescription>Pending and past team invitations</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {filteredInvitations.length === 0 ? (
+              <div className="text-center py-8">
+                <Mail className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                <p className="text-muted-foreground">No invitations</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Send invitations to grow your team
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredInvitations.map((invitation) => (
+                  <div
+                    key={invitation.id}
+                    className="flex items-center justify-between p-4 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      <Avatar className="h-10 w-10">
+                        <AvatarFallback className="bg-muted text-muted-foreground">
+                          {(invitation.name || invitation.email)
+                            .substring(0, 2)
+                            .toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-foreground">
+                            {invitation.name || invitation.email.split("@")[0]}
+                          </h3>
+                          {getRoleBadge(invitation.role)}
+                          {getStatusBadge(invitation.status)}
+                        </div>
+                        <p className="text-sm text-muted-foreground flex items-center gap-1">
+                          <Mail className="w-3 h-3" />
+                          {invitation.email}
+                        </p>
+                      </div>
+                    </div>
+                    {invitation.status === "pending" && (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => resendInvite.mutate(invitation)}
+                          disabled={resendInvite.isPending}
+                        >
+                          <RefreshCw className={`w-4 h-4 mr-1 ${resendInvite.isPending ? "animate-spin" : ""}`} />
+                          Resend
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => cancelInvite.mutate(invitation.id)}
+                          disabled={cancelInvite.isPending}
+                        >
+                          <XCircle className="w-4 h-4 mr-1" />
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
